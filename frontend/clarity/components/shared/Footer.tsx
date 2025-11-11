@@ -6,7 +6,7 @@ export default function Footer() {
       <div className="flex flex-col gap-2">
         <Image
           src="/logo-clarity-squared.png"
-          alt="LDAO Logo"
+          alt="Clarity Logo"
           width={50}
           height={50}
         />
