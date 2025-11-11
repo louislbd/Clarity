@@ -14,17 +14,20 @@
                 --background-darker: #0F0820;
             }
 
+
             * {
                 margin: 0;
                 padding: 0;
                 box-sizing: border-box;
             }
 
+            html, body {
+                background: transparent !important;
+            }
+
             body {
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
                 overflow: hidden;
-                background: transparent;
-                color: white;
             }
 
             .container {
@@ -32,6 +35,7 @@
                 width: 100vw;
                 height: 100vh;
                 overflow: hidden;
+                background: transparent !important;
             }
 
             #blobCanvas {
@@ -40,21 +44,7 @@
                 left: 0;
                 width: 100%;
                 height: 100%;
-                cursor: none;
-            }
-
-            .cursor {
-                position: fixed;
-                width: 12px;
-                height: 12px;
-                border-radius: 50%;
-                background: var(--accent-gold);
-                pointer-events: none;
-                z-index: 9999;
-                transform: translate(-50%, -50%);
-                box-shadow: 0 0 20px var(--accent-gold);
-                opacity: 0.8;
-                transition: transform 0.1s ease;
+                background: transparent !important;
             }
 
             @media (max-width: 768px) {
@@ -65,9 +55,10 @@
                     max-width: none;
                 }
 
-                .cursor {
-                    display: none;
-                }
+            }
+
+            html, body, .container, #blobCanvas {
+                background: transparent !important;
             }
         </style>
     </head>
@@ -75,7 +66,6 @@
     <body>
         <div class="container">
             <canvas id="blobCanvas"></canvas>
-            <div class="cursor" id="customCursor"></div>
         </div>
 
         <script>
@@ -250,20 +240,6 @@
                     window.addEventListener('mousemove', (e) => {
                         this.mouse.x = e.clientX;
                         this.mouse.y = e.clientY;
-
-                        const cursor = document.getElementById('customCursor');
-                        cursor.style.left = e.clientX + 'px';
-                        cursor.style.top = e.clientY + 'px';
-                    });
-
-                    window.addEventListener('mouseenter', () => {
-                        const cursor = document.getElementById('customCursor');
-                        cursor.style.opacity = '0.8';
-                    });
-
-                    window.addEventListener('mouseleave', () => {
-                        const cursor = document.getElementById('customCursor');
-                        cursor.style.opacity = '0';
                     });
                 }
 

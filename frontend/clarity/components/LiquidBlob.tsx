@@ -14,7 +14,7 @@ export default function LiquidBlob({
     className = "",
 } : LiquidBlobProps) {
     return (
-        <BlobCard className={`liquid-blob overflow-hidden ${className}`}>
+        <BlobCard className={`bg-[var(--background)] ${className}`}>
         <BlobCardContent className="p-0">
             <div className={`${height} ${width} overflow-hidden bg-transparent`}>
                 <iframe

@@ -7,7 +7,7 @@ import { Button } from "../ui/button";
 import { ModeToggle } from "../mode-toggle";
 import SearchBar from "../SearchBar";
 
-export default function Navbar() {
+export default function AppNavbar() {
   return(
     <div className="h-[90px] w-3/4 p-4 mx-auto flex items-center justify-between">
       <Link href="/">
@@ -18,9 +18,8 @@ export default function Navbar() {
       </Link>
       <div className="flex gap-x-5 items-center">
         <ModeToggle />
-        <SearchBar />
-        <Button className="cursor-pointer" variant="outline">Docs</Button>
-        <Button className="cursor-pointer" variant="outline">About</Button>
+        <Button className="cursor-pointer" variant="ghost">Dashboard</Button>
+        <Button className="cursor-pointer" variant="ghost">Earn</Button>
         <Link href="/dashboard">
           <Button className="cursor-pointer">Open App</Button>
         </Link>
