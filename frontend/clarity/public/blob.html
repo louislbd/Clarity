@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Interactive Liquid Blob - DeFi Protocol</title>
+        <style>
+            :root {
+                --primary-purple: #9B5DE5;
+                --light-purple: #E0AAFF;
+                --deep-purple: #5A189A;
+                --accent-gold: #D4A574;
+                --background-dark: #1A0B2E;
+                --background-darker: #0F0820;
+            }
+
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+                overflow: hidden;
+                background: transparent;
+                color: white;
+            }
+
+            .container {
+                position: relative;
+                width: 100vw;
+                height: 100vh;
+                overflow: hidden;
+            }
+
+            #blobCanvas {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                cursor: none;
+            }
+
+            .cursor {
+                position: fixed;
+                width: 12px;
+                height: 12px;
+                border-radius: 50%;
+                background: var(--accent-gold);
+                pointer-events: none;
+                z-index: 9999;
+                transform: translate(-50%, -50%);
+                box-shadow: 0 0 20px var(--accent-gold);
+                opacity: 0.8;
+                transition: transform 0.1s ease;
+            }
+
+            @media (max-width: 768px) {
+                .info-panel {
+                    top: 20px;
+                    left: 20px;
+                    right: 20px;
+                    max-width: none;
+                }
+
+                .cursor {
+                    display: none;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <canvas id="blobCanvas"></canvas>
+            <div class="cursor" id="customCursor"></div>
+        </div>
+
+        <script>
+            class SimplexNoise {
+                constructor() {
+                    this.grad3 = [
+                        [1, 1, 0],
+                        [-1, 1, 0],
+                        [1, -1, 0],
+                        [-1, -1, 0],
+                        [1, 0, 1],
+                        [-1, 0, 1],
+                        [1, 0, -1],
+                        [-1, 0, -1],
+                        [0, 1, 1],
+                        [0, -1, 1],
+                        [0, 1, -1],
+                        [0, -1, -1]
+                    ];
+
+                    this.p = [];
+                    for (let i = 0; i < 256; i++) {
+                        this.p[i] = Math.floor(Math.random() * 256);
+                    }
+
+                    this.perm = [];
+                    for (let i = 0; i < 512; i++) {
+                        this.perm[i] = this.p[i & 255];
+                    }
+                }
+
+                dot(g, x, y) {
+                    return g[0] * x + g[1] * y;
+                }
+
+                noise(xin, yin) {
+                    const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+                    const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+
+                    let n0, n1, n2;
+                    let s = (xin + yin) * F2;
+                    let i = Math.floor(xin + s);
+                    let j = Math.floor(yin + s);
+                    let t = (i + j) * G2;
+                    let X0 = i - t;
+                    let Y0 = j - t;
+                    let x0 = xin - X0;
+                    let y0 = yin - Y0;
+
+                    let i1, j1;
+                    if (x0 > y0) {
+                        i1 = 1;
+                        j1 = 0;
+                    } else {
+                        i1 = 0;
+                        j1 = 1;
+                    }
+
+                    let x1 = x0 - i1 + G2;
+                    let y1 = y0 - j1 + G2;
+                    let x2 = x0 - 1.0 + 2.0 * G2;
+                    let y2 = y0 - 1.0 + 2.0 * G2;
+
+                    let ii = i & 255;
+                    let jj = j & 255;
+                    let gi0 = this.perm[ii + this.perm[jj]] % 12;
+                    let gi1 = this.perm[ii + i1 + this.perm[jj + j1]] % 12;
+                    let gi2 = this.perm[ii + 1 + this.perm[jj + 1]] % 12;
+
+                    let t0 = 0.5 - x0 * x0 - y0 * y0;
+                    if (t0 < 0) n0 = 0.0;
+                    else {
+                        t0 *= t0;
+                        n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0);
+                    }
+
+                    let t1 = 0.5 - x1 * x1 - y1 * y1;
+                    if (t1 < 0) n1 = 0.0;
+                    else {
+                        t1 *= t1;
+                        n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1);
+                    }
+
+                    let t2 = 0.5 - x2 * x2 - y2 * y2;
+                    if (t2 < 0) n2 = 0.0;
+                    else {
+                        t2 *= t2;
+                        n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2);
+                    }
+
+                    return 70.0 * (n0 + n1 + n2);
+                }
+            }
+
+            // Main Blob Animation Class
+            class LiquidBlob {
+                constructor(canvas) {
+                    this.canvas = canvas;
+                    this.ctx = canvas.getContext('2d');
+                    this.noise = new SimplexNoise();
+
+                    // Animation parameters
+                    this.baseRadiusX = 240;
+                    this.baseRadiusY = 120;
+                    this.numPoints = 100;
+                    this.noiseAmplitude = 22;
+                    this.noiseFrequencies = [0.0025, 0.004, 0.006];
+                    this.animationSpeed = 0.002;
+                    this.glowRadius = 30;
+                    this.borderWidth = 2.5;
+                    this.pushRadius = 320;
+                    this.maxPushMagnitude = 75;
+                    this.dampingFactor = 0.06;
+                    this.springStrength = 0.08;
+
+                    // State
+                    this.mouse = { x: -1000, y: -1000 };
+                    this.centerX = window.innerWidth / 2;
+                    this.centerY = window.innerHeight / 2;
+                    this.time = 0;
+
+                    // Initialize blob points with irregular base shape
+                    this.points = [];
+                    this.initializePoints();
+
+                    this.resize();
+                    this.setupEventListeners();
+                    this.animate();
+                }
+
+                resize() {
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
+                    this.centerX = window.innerWidth / 2;
+                    this.centerY = window.innerHeight / 2;
+                }
+
+                initializePoints() {
+                    this.points = [];
+                    for (let i = 0; i < this.numPoints; i++) {
+                        const angle = (i / this.numPoints) * Math.PI * 2;
+
+                        // Calculate ellipse base position
+                        const baseX = this.baseRadiusX * Math.cos(angle);
+                        const baseY = this.baseRadiusY * Math.sin(angle);
+                        const baseDistance = Math.sqrt(baseX * baseX + baseY * baseY);
+
+                        this.points.push({
+                            angle: angle,
+                            baseRadiusX: this.baseRadiusX,
+                            baseRadiusY: this.baseRadiusY,
+                            baseDistance: baseDistance,
+                            currentDistance: baseDistance,
+                            velocity: 0,
+                            x: 0,
+                            y: 0
+                        });
+                    }
+                }
+
+                seededRandom(seed) {
+                    let value = seed;
+                    return function () {
+                        value = (value * 9301 + 49297) % 233280;
+                        return value / 233280;
+                    };
+                }
+
+                setupEventListeners() {
+                    window.addEventListener('resize', () => this.resize());
+
+                    window.addEventListener('mousemove', (e) => {
+                        this.mouse.x = e.clientX;
+                        this.mouse.y = e.clientY;
+
+                        const cursor = document.getElementById('customCursor');
+                        cursor.style.left = e.clientX + 'px';
+                        cursor.style.top = e.clientY + 'px';
+                    });
+
+                    window.addEventListener('mouseenter', () => {
+                        const cursor = document.getElementById('customCursor');
+                        cursor.style.opacity = '0.8';
+                    });
+
+                    window.addEventListener('mouseleave', () => {
+                        const cursor = document.getElementById('customCursor');
+                        cursor.style.opacity = '0';
+                    });
+                }
+
+                lerp(start, end, factor) {
+                    return start + (end - start) * factor;
+                }
+
+                distance(x1, y1, x2, y2) {
+                    return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+                }
+
+                updatePoints() {
+                    // Update each point with noise distortion and mouse repulsion
+                    for (let i = 0; i < this.points.length; i++) {
+                        const point = this.points[i];
+
+                        // Calculate base ellipse position
+                        const baseX = point.baseRadiusX * Math.cos(point.angle);
+                        const baseY = point.baseRadiusY * Math.sin(point.angle);
+                        const baseDistance = point.baseDistance;
+
+                        // Multi-frequency noise distortion for surface waves
+                        let totalNoise = 0;
+                        for (let freq of this.noiseFrequencies) {
+                            const noiseX = Math.cos(point.angle) * freq * 100;
+                            const noiseY = Math.sin(point.angle) * freq * 100;
+                            totalNoise += this.noise.noise(noiseX + this.time, noiseY + this.time);
+                        }
+                        const noiseDistortion = (totalNoise / this.noiseFrequencies.length) * this.noiseAmplitude;
+
+                        // Idle pulsing animation
+                        const pulseEffect = Math.sin(this.time * 0.8 + point.angle * 2) * 8;
+
+                        // Target distance from center with noise and pulse
+                        let targetDistance = baseDistance + noiseDistortion + pulseEffect;
+
+                        // Calculate mouse repulsion (push effect)
+                        const unitX = baseX / baseDistance;
+                        const unitY = baseY / baseDistance;
+                        const currentX = this.centerX + unitX * point.currentDistance;
+                        const currentY = this.centerY + unitY * point.currentDistance;
+                        const distToMouse = this.distance(currentX, currentY, this.mouse.x, this.mouse.y);
+
+                        if (distToMouse < this.pushRadius) {
+                            // Calculate repulsion force (quadratic falloff)
+                            const repulsionStrength = Math.pow(1 - (distToMouse / this.pushRadius), 2);
+                            const pushForce = repulsionStrength * this.maxPushMagnitude;
+
+                            // Calculate direction from mouse to point (push away)
+                            const dirX = currentX - this.mouse.x;
+                            const dirY = currentY - this.mouse.y;
+                            const dirLength = Math.sqrt(dirX * dirX + dirY * dirY);
+
+                            if (dirLength > 0) {
+                                // Normalize direction and apply push
+                                const normDirX = dirX / dirLength;
+                                const normDirY = dirY / dirLength;
+
+                                // Calculate angle difference to apply radial push
+                                const pushAngle = Math.atan2(normDirY, normDirX);
+                                const angleDiff = point.angle - pushAngle;
+                                const radialPush = Math.cos(angleDiff) * pushForce;
+
+                                targetDistance += radialPush;
+                            }
+                        }
+
+                        // Apply spring physics for smooth return
+                        const distanceDiff = targetDistance - point.currentDistance;
+                        point.velocity += distanceDiff * this.springStrength;
+                        point.velocity *= (1 - this.dampingFactor);
+
+                        // Clamp velocity
+                        const maxVelocity = 15;
+                        point.velocity = Math.max(-maxVelocity, Math.min(maxVelocity, point.velocity));
+
+                        // Update distance
+                        point.currentDistance += point.velocity;
+
+                        // Update position using ellipse unit vector
+                        point.x = this.centerX + unitX * point.currentDistance;
+                        point.y = this.centerY + unitY * point.currentDistance;
+                    }
+                }
+
+                drawBlob() {
+                    const ctx = this.ctx;
+
+                    // Update all points
+                    this.updatePoints();
+
+                    // Draw blob using smooth curves
+                    ctx.beginPath();
+                    // Start at first point
+                    ctx.moveTo(this.points[0].x, this.points[0].y);
+
+                    // Draw smooth curve through all points using quadratic curves
+                    for (let i = 0; i < this.points.length; i++) {
+                        const current = this.points[i];
+                        const next = this.points[(i + 1) % this.points.length];
+
+                        // Calculate control point (midpoint)
+                        const cpX = (current.x + next.x) / 2;
+                        const cpY = (current.y + next.y) / 2;
+
+                        ctx.quadraticCurveTo(current.x, current.y, cpX, cpY);
+                    }
+                    ctx.closePath();
+
+                    // Create gradient centered on blob
+                    const maxRadius = this.baseRadiusX * 1.5;
+                    const gradient = ctx.createRadialGradient(this.centerX, this.centerY, 0, this.centerX, this.centerY, maxRadius);
+                    gradient.addColorStop(0, 'rgba(224, 170, 255, 0.8)');
+                    gradient.addColorStop(0.4, 'rgba(155, 93, 229, 0.7)');
+                    gradient.addColorStop(0.7, 'rgba(90, 24, 154, 0.6)');
+                    gradient.addColorStop(1, 'rgba(90, 24, 154, 0.3)');
+
+                    // Draw glow effect
+                    ctx.shadowBlur = this.glowRadius;
+                    ctx.shadowColor = 'rgba(155, 93, 229, 0.6)';
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+
+                    // Draw border with golden accent
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = 'rgba(212, 165, 116, 0.4)';
+                    ctx.strokeStyle = 'rgba(212, 165, 116, 0.5)';
+                    ctx.lineWidth = this.borderWidth;
+                    ctx.stroke();
+
+                    // Inner glow
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = 'rgba(224, 170, 255, 0.3)';
+                    ctx.strokeStyle = 'rgba(224, 170, 255, 0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                }
+
+                drawParticles() {
+                    const ctx = this.ctx;
+                    const particleCount = 20;
+
+                    for (let i = 0; i < particleCount; i++) {
+                        const angle = (i / particleCount) * Math.PI * 2 + this.time * 0.3;
+                        const radius = ((this.baseRadiusX + this.baseRadiusY) / 2) * 1.8;
+                        const x = this.centerX + Math.cos(angle) * radius;
+                        const y = this.centerY + Math.sin(angle) * radius;
+                        const size = 2 + Math.sin(this.time * 2 + i) * 1;
+                        const alpha = 0.3 + Math.sin(this.time * 1.5 + i) * 0.2;
+
+                        ctx.beginPath();
+                        ctx.arc(x, y, size, 0, Math.PI * 2);
+                        ctx.fillStyle = 'rgba(224, 170, 255, ' + alpha + ')';
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = 'rgba(155, 93, 229, 0.8)';
+                        ctx.fill();
+                    }
+                }
+
+                animate() {
+                    this.time += this.animationSpeed;
+
+                    // Clear canvas
+                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+
+                    // Draw particles
+                    this.drawParticles();
+
+                    // Draw main blob
+                    this.drawBlob();
+
+                    requestAnimationFrame(() => this.animate());
+                }
+            }
+
+            // Initialize
+            window.addEventListener('DOMContentLoaded', () => {
+                const canvas = document.getElementById('blobCanvas');
+                new LiquidBlob(canvas);
+            });
+        </script>
+    </body>
+</html>
