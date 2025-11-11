@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { Button } from "../ui/button";
 import { ModeToggle } from "../mode-toggle";
+import CustomConnectButton from "../custom/CustomConnectButton";
 
 export default function AppNavbar() {
   const tvl = "$12.3M";
@@ -17,14 +18,12 @@ export default function AppNavbar() {
           <h1 className="text-3xl font-bold">Clarity</h1>
         </div>
       </Link>
-      <div className="flex items-center gap-x-7">
+      <div className="flex items-center gap-x-2">
         <ModeToggle />
         <Button className="cursor-pointer" variant="ghost">Dashboard</Button>
         <Button className="cursor-pointer" variant="ghost">Earn</Button>
-        <p className="text-muted-foreground">TVL: {tvl}</p>
-        <Link href="#">
-          <Button className="cursor-pointer">Connect Wallet</Button>
-        </Link>
+        <p className="text-muted-foreground mx-2">TVL: {tvl}</p>
+        <CustomConnectButton />
       </div>
     </div>
   );

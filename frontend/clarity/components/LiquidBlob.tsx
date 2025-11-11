@@ -1,4 +1,4 @@
-import { BlobCard, BlobCardContent } from "./blob-card";
+import { BlobCard, BlobCardContent } from "./custom/blob-card";
 
 interface LiquidBlobProps {
     title?: string;
