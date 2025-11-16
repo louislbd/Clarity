@@ -62,7 +62,7 @@ export default function VaultCard({ vault }: { vault: Vault }) {
           Deposit
         </Button>
         <Button className="flex-1" variant="outline">
-          Details
+          Withdraw
         </Button>
       </CardFooter>
     </Card>

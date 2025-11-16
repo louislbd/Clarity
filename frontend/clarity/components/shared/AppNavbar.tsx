@@ -20,8 +20,12 @@ export default function AppNavbar() {
       </Link>
       <div className="flex items-center gap-x-2">
         <ModeToggle />
-        <Button className="cursor-pointer" variant="ghost">Dashboard</Button>
-        <Button className="cursor-pointer" variant="ghost">Earn</Button>
+        <Link href="/app/dashboard">
+          <Button className="cursor-pointer" variant="ghost">Dashboard</Button>
+        </Link>
+        <Link href="/app/earn">
+          <Button className="cursor-pointer" variant="ghost">Earn</Button>
+        </Link>
         <p className="text-muted-foreground mx-2">TVL: {tvl}</p>
         <CustomConnectButton />
       </div>

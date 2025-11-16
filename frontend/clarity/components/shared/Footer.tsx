@@ -11,7 +11,7 @@ export default function Footer() {
           height={50}
         />
         <p className="text-sm text-muted-foreground">
-          LiquidityDAO Treasury &copy; {new Date().getFullYear()}. All rights reserved.
+          Clarity &copy; {new Date().getFullYear()}. All rights reserved.
         </p>
       </div>
         <div className="flex flex-row gap-4 items-center">
