@@ -1,5 +1,4 @@
 import AppNavbar from "@/components/shared/AppNavbar";
-import Footer from "@/components/shared/Footer";
 
 export default function AppLayout({
   children,

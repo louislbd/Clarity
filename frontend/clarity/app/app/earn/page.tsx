@@ -1,5 +1,5 @@
-// app/earn/page.tsx
 import VaultCard from "@/components/VaultCard";
+import Link from "next/link";
 
 export default function EarnPage() {
   const vaults = [
@@ -43,7 +43,9 @@ export default function EarnPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {vaults.map((vault) => (
-            <VaultCard key={vault.name} vault={vault} />
+            <Link href={`/app/earn/${vault.name.toLowerCase()}`} key={vault.name} passHref>
+              <VaultCard key={vault.name} vault={vault} />
+            </Link>
           ))}
         </div>
 
