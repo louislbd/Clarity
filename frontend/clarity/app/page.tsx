@@ -1,5 +1,4 @@
 import Navbar from "@/components/shared/Navbar";
-import LiquidBlob from "@/components/LiquidBlob";
 
 export default function Home() {
   return (
@@ -11,7 +10,6 @@ export default function Home() {
             <h1 className="text-3xl font-bold font-mono">Invest With Insight, Grow With Clarity</h1>
             <p className="text-lg text-gray-500">Deposit, Save, Earn</p>
           </div>
-          <LiquidBlob />
         </div>
       </div>
     </>
