@@ -8,6 +8,8 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IClarityVault } from "../interfaces/IClarityVault.sol";
+import { IAavePool } from "../interfaces/IAavePool.sol";
+import { ClarityUtils } from "../ClarityUtils.sol";
 
 
 /**
@@ -21,12 +23,12 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     struct Allocation {
         address protocol;
-        uint256 ratio; // in basis points (e.g., 3270 = 32.7%)
+        address asset;
+        uint256 ratio;
     }
 
     Allocation[] private allocations;
     uint256 private currentAPY;
-    uint256 private constant BASIS_POINTS = 1e4;
     uint256 public entryFeeBP = 100; // 1.0%
     uint256 public exitFeeBP = 50;   // 0.5%
     address public feeRecipient;
@@ -41,6 +43,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
     error VaultIsPaused();
     error NoAllocationsDefined();
     error InvalidAllocationRatio();
+    error InvalidProtocolOrAsset();
     error FeeTooHigh();
 
     constructor(
@@ -92,7 +95,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     function getAPY() external view override returns (uint256) {
         // To be implemented according to vault performance data
-        uint256 currentAPY = 12000; // Placeholder value representing 12.00% APY
+        uint256 currentAPY = 12000; // 12.00% APY
         return currentAPY;
     }
 
@@ -102,12 +105,35 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         uint256 _assets,
         uint256 _shares
     ) internal override whenNotPaused {
-        uint256 fee = _feeOnTotal(_assets, entryFeeBP);
+        uint256 fee = ClarityUtils._feeOnTotal(_assets, entryFeeBP);
+
+        for (uint256 i = 0; i < allocations.length; ++i) {
+            Allocation memory alloc = allocations[i];
+            // TODO: Use safe math here
+            uint256 allocationAmount = (_assets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            require(allocationAmount <= _assets, InvalidAllocationRatio());
+
+            IERC20(alloc.asset).approve(alloc.protocol, allocationAmount);
+
+            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.USDC_BASE) {
+                IAavePool(alloc.protocol).supply(alloc.asset, allocationAmount, address(this), 0);
+            } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE) {
+                // Add asset conversion logic here if needed
+                revert(InvalidProtocolOrAsset());
+            } else {
+                // TODO: Add other protocol adapters here (Morpho, Ethena, etc.)
+                revert(InvalidProtocolOrAsset());
+            }
+        }
+
         super._deposit(_caller, _receiver, _assets, _shares);
+
         if (fee > 0 && feeRecipient != address(0)) {
-            IERC20(asset()).safeTransfer(feeRecipient, fee);
+            IERC20(ClarityUtils.USDC_BASE).safeTransfer(feeRecipient, fee);
         }
     }
+
+
 
     function _withdraw(
         address _caller,
@@ -116,12 +142,28 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         uint256 _assets,
         uint256 _shares
     ) internal override whenNotPaused {
-        uint256 fee = _feeOnRaw(_assets, exitFeeBP);
-        super._withdraw(_caller, _receiver, _owner, _assets, _shares);
-        if (fee > 0 && feeRecipient != address(0)) {
-            IERC20(asset()).safeTransfer(feeRecipient, fee);
+        uint256 fee = ClarityUtils._feeOnRaw(_assets, exitFeeBP);
+
+        for (uint256 i = 0; i < allocations.length; ++i) {
+            Allocation memory alloc = allocations[i];
+            uint256 allocationAmount = (_assets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            require(allocationAmount <= _assets, InvalidAllocationRatio());
+
+            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.USDC_BASE) {
+                IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
+            } else {
+                revert(InvalidProtocolOrAsset());
+            }
         }
+
+        super._withdraw(_caller, _receiver, _owner, _assets, _shares);
+
+        if (fee > 0 && feeRecipient != address(0)) {
+            IERC20(ClarityUtils.USDC_BASE).safeTransfer(feeRecipient, fee);
+        }
+        IERC20(ClarityUtils.USDC_BASE).safeTransfer(_receiver, _assets - fee);
     }
+
 
     function _redeem(
         address _caller,
@@ -130,12 +172,28 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         uint256 _shares,
         uint256 _assets
     ) internal override whenNotPaused {
-        uint256 fee = _feeOnTotal(_assets, exitFeeBP);
-        super._redeem(_caller, _receiver, _owner, _shares, _assets);
-        if (fee > 0 && feeRecipient != address(0)) {
-            IERC20(asset()).safeTransfer(feeRecipient, fee);
+        uint256 fee = ClarityUtils._feeOnTotal(_assets, exitFeeBP);
+
+        for (uint256 i = 0; i < allocations.length; ++i) {
+            Allocation memory alloc = allocations[i];
+            uint256 allocationAmount = (_assets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            require(allocationAmount <= _assets, InvalidAllocationRatio());
+
+            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.USDC_BASE) {
+                IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
+            } else {
+                revert(InvalidProtocolOrAsset());
+            }
         }
+
+        super._redeem(_caller, _receiver, _owner, _shares, _assets);
+
+        if (fee > 0 && feeRecipient != address(0)) {
+            IERC20(ClarityUtils.USDC_BASE).safeTransfer(feeRecipient, fee);
+        }
+        IERC20(ClarityUtils.USDC_BASE).safeTransfer(_receiver, _assets - fee);
     }
+
 
     function pause() external override onlyOwner {
         _pause();
@@ -167,39 +225,28 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         emit ExitFeeUpdated(_newFeeBP);
     }
 
-    function _feeOnRaw(uint256 _assets, uint256 _feeBP) private pure returns (uint256) {
-        return _assets.mulDiv(_feeBP, BASIS_POINTS, Math.Rounding.Ceil);
-    }
-
-    function _feeOnTotal(uint256 _assets, uint256 _feeBP) private pure returns (uint256) {
-        return _assets.mulDiv(_feeBP, _feeBP + BASIS_POINTS, Math.Rounding.Ceil);
-    }
-
     function previewDeposit(uint256 _assets) public view override returns (uint256) {
-        uint256 fee = _feeOnTotal(_assets, entryFeeBP);
+        uint256 fee = ClarityUtils._feeOnTotal(_assets, entryFeeBP);
         return super.previewDeposit(_assets - fee);
     }
 
     function previewMint(uint256 _shares) public view override returns (uint256) {
         uint256 assets = super.previewMint(_shares);
-        return assets + _feeOnRaw(assets, entryFeeBP);
+        return assets + ClarityUtils._feeOnRaw(assets, entryFeeBP);
     }
 
     function previewWithdraw(uint256 _assets) public view override returns (uint256) {
-        uint256 fee = _feeOnRaw(_assets, exitFeeBP);
+        uint256 fee = ClarityUtils._feeOnRaw(_assets, exitFeeBP);
         return super.previewWithdraw(_assets + fee);
     }
 
     function previewRedeem(uint256 _shares) public view override returns (uint256) {
         uint256 assets = super.previewRedeem(_shares);
-        return assets - _feeOnTotal(assets, exitFeeBP);
+        return assets - ClarityUtils._feeOnTotal(assets, exitFeeBP);
     }
 
     function _beforeTokenTransfer(address _from, address _to, uint256 _amount) internal override {
         super._beforeTokenTransfer(_from, _to, _amount);
         require(!paused(), VaultIsPaused());
     }
-
-
-    // TODO: Implement protocol adapters
 }
