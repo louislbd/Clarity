@@ -1,3 +1,0 @@
-Django>=4.2
-djangorestframework>=3.14
-psycopg2-binary>=2.9
