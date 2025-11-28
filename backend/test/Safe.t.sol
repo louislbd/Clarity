@@ -1,0 +1,282 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.28;
+
+import {Test} from "forge-std/Test.sol";
+import {Safe} from "../contracts/vaults/Safe.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IAavePool} from "../contracts/interfaces/IAavePool.sol";
+import {ClarityUtils} from "../contracts/ClarityUtils.sol";
+
+/// @dev Simple test ERC20 with 6 decimals for USDC-like behavior
+contract TestERC20 is ERC20 {
+    uint8 private immutable _decimals;
+
+    constructor(string memory name_, string memory symbol_, uint8 decimals_)
+        ERC20(name_, symbol_)
+    {
+        _decimals = decimals_;
+    }
+
+    function decimals() public view override returns (uint8) {
+        return _decimals;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
+/// @dev Minimal mock Aave pool to track supply/withdraw calls
+contract MockAavePool is IAavePool {
+    event Supplied(address asset, uint256 amount, address onBehalfOf, uint16 referralCode);
+    event Withdrawn(address asset, uint256 amount, address to);
+
+    // simple accounting: asset => balance
+    mapping(address => uint256) public balances;
+
+    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external override {
+        balances[asset] += amount;
+        emit Supplied(asset, amount, onBehalfOf, referralCode);
+    }
+
+    function withdraw(address asset, uint256 amount, address to) external override returns (uint256) {
+        require(balances[asset] >= amount, "insufficient mock balance");
+        balances[asset] -= amount;
+        emit Withdrawn(asset, amount, to);
+        return amount;
+    }
+}
+
+contract SafeVaultTest is Test {
+    TestERC20 internal usdc;
+    MockAavePool internal aavePool;
+    Safe internal vault;
+
+    address internal owner = address(0xA11CE);
+    address internal user = address(0xBEEF);
+    address internal feeRecipient = address(0xFEE5);
+
+    uint256 internal constant INITIAL_USER_USDC = 1_000_000e6; // 1,000,000 USDC (6 decimals)
+
+    function setUp() public {
+        // Deploy real implementations to the constant addresses used in ClarityUtils
+        TestERC20 realUsdcImpl = new TestERC20("Test USDC", "tUSDC", 6);
+        MockAavePool realAaveImpl = new MockAavePool();
+
+        // Copy the bytecode to the constant addresses of ClarityUtils
+        address usdcAddr = ClarityUtils.USDC_BASE;
+        address aaveAddr = ClarityUtils.AAVE_POOL_BASE;
+
+        bytes memory usdcCode = address(realUsdcImpl).code;
+        bytes memory aaveCode = address(realAaveImpl).code;
+
+        vm.etch(usdcAddr, usdcCode);
+        vm.etch(aaveAddr, aaveCode);
+
+        usdc = TestERC20(usdcAddr);
+        aavePool = MockAavePool(aaveAddr);
+
+        // allocations use exactly the constants
+        Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
+        allocs[0] = Safe.Allocation({
+            protocol: aaveAddr,
+            asset: usdcAddr,
+            ratio: 10_000
+        });
+
+        vm.prank(owner);
+        vault = new Safe(
+            ERC20(usdcAddr),
+            owner,
+            allocs,
+            feeRecipient
+        );
+
+        usdc.mint(user, INITIAL_USER_USDC);
+    }
+
+
+    function testInitialState() public {
+        assertEq(vault.asset(), address(usdc), "asset mismatch");
+        assertEq(vault.entryFeeBP(), 100, "entry fee");
+        assertEq(vault.exitFeeBP(), 50, "exit fee");
+
+        (address[] memory protocols, uint256[] memory ratios) = vault.getAllocations();
+        assertEq(protocols.length, 1);
+        assertEq(ratios.length, 1);
+        assertEq(protocols[0], address(aavePool));
+        assertEq(ratios[0], 10_000);
+    }
+
+    function testDepositRoutesToAaveAndChargesFee() public {
+        uint256 amount = 1_000e6; // 1,000 USDC
+
+        vm.startPrank(user);
+        usdc.approve(address(vault), amount);
+
+        // previewDeposit should account for entry fee
+        uint256 expectedShares = vault.previewDeposit(amount);
+        assertGt(expectedShares, 0);
+
+        uint256 shares = vault.deposit(amount, user);
+        vm.stopPrank();
+
+        assertEq(shares, expectedShares, "shares mismatch");
+
+        // Vault should have minted shares to user
+        assertEq(vault.balanceOf(user), shares, "user shares");
+
+        // Fee should have been taken in USDC from the vault
+        uint256 fee = ClarityUtils._feeOnTotal(amount, vault.entryFeeBP());
+        // All assets go to Aave via mock, fee sent to feeRecipient from vault's balance
+        assertEq(usdc.balanceOf(feeRecipient), fee, "fee recipient USDC balance");
+
+        // Check mock Aave balance
+        assertEq(aavePool.balances(address(usdc)), amount, "Aave mock balance");
+    }
+
+    function testWithdrawUnwindsFromAaveAndChargesFee() public {
+        uint256 amount = 1_000e6;
+
+        // First deposit
+        vm.startPrank(user);
+        usdc.approve(address(vault), amount);
+        vault.deposit(amount, user);
+        vm.stopPrank();
+
+        // On demande à retirer un certain montant en assets
+        uint256 withdrawAssets = 500e6;
+
+        vm.startPrank(user);
+        uint256 expectedSharesBurned = vault.previewWithdraw(withdrawAssets);
+        uint256 burnedShares = vault.withdraw(withdrawAssets, user, user);
+        vm.stopPrank();
+
+        assertEq(burnedShares, expectedSharesBurned, "burned shares mismatch");
+
+        // Le feeRecipient doit avoir reçu des frais > 0
+        uint256 feeRecipientBal = usdc.balanceOf(feeRecipient);
+        assertGt(feeRecipientBal, 0, "fee recipient should have some fees after withdraw");
+    }
+
+
+
+    function testRedeemUsesPreviewAndRespectsFees() public {
+        uint256 amount = 1_000e6;
+
+        // Deposit
+        vm.startPrank(user);
+        usdc.approve(address(vault), amount);
+        uint256 shares = vault.deposit(amount, user);
+        vm.stopPrank();
+
+        // Redeem all shares
+        vm.startPrank(user);
+        uint256 previewAssets = vault.previewRedeem(shares);
+        uint256 assetsOut = vault.redeem(shares, user, user);
+        vm.stopPrank();
+
+        assertEq(assetsOut, previewAssets, "redeem assets mismatch");
+
+        // Le feeRecipient a au moins reçu les frais d'entrée
+        uint256 feeRecipientBal = usdc.balanceOf(feeRecipient);
+        assertGt(feeRecipientBal, 0, "fee recipient should have some fees");
+
+        // L'utilisateur a payé des frais (moins que son solde initial) mais a récupéré quelque chose
+        uint256 userBal = usdc.balanceOf(user);
+        assertLt(userBal, INITIAL_USER_USDC, "user should have paid fees");
+        assertGt(userBal, 0, "user should have recovered some assets");
+    }
+
+    function testPauseBlocksDepositWithdrawRedeem() public {
+        // Owner pauses
+        vm.prank(owner);
+        vault.pause();
+        assertTrue(vault.isPaused());
+
+        vm.startPrank(user);
+        usdc.approve(address(vault), 1_000e6);
+
+        vm.expectRevert(); // whenNotPaused in deposit path
+        vault.deposit(1_000e6, user);
+
+        vm.expectRevert();
+        vault.withdraw(0, user, user);
+
+        vm.expectRevert();
+        vault.redeem(0, user, user);
+        vm.stopPrank();
+    }
+
+    function testSetFeesAndAPYOnlyOwner() public {
+        // Non-owner cannot set
+        vm.prank(user);
+        vm.expectRevert();
+        vault.setEntryFeeBP(200);
+
+        vm.prank(user);
+        vm.expectRevert();
+        vault.setExitFeeBP(200);
+
+        vm.prank(user);
+        vm.expectRevert();
+        vault.setAPY(15000);
+
+        // Owner can set
+        vm.prank(owner);
+        vault.setEntryFeeBP(200);
+        assertEq(vault.entryFeeBP(), 200);
+
+        vm.prank(owner);
+        vault.setExitFeeBP(200);
+        assertEq(vault.exitFeeBP(), 200);
+
+        vm.prank(owner);
+        vault.setAPY(15000);
+        // getAPY just returns constant 12000 currently,
+        // but we validate that function is callable
+        uint256 apy = vault.getAPY();
+        assertEq(apy, 12000);
+    }
+
+    function testSetAllocationsOnlyOwnerAndValidSum() public {
+        Safe.Allocation[] memory badAllocs = new Safe.Allocation[](1);
+        badAllocs[0] = Safe.Allocation({
+            protocol: address(aavePool),
+            asset: address(usdc),
+            ratio: 5_000
+        });
+
+        // non-owner
+        vm.prank(user);
+        vm.expectRevert();
+        vault.setAllocations(badAllocs);
+
+        // owner but invalid ratio sum (not 10000)
+        vm.prank(owner);
+        vm.expectRevert();
+        vault.setAllocations(badAllocs);
+
+        // valid new allocations
+        Safe.Allocation[] memory goodAllocs = new Safe.Allocation[](2);
+        goodAllocs[0] = Safe.Allocation({
+            protocol: address(aavePool),
+            asset: address(usdc),
+            ratio: 6_000
+        });
+        goodAllocs[1] = Safe.Allocation({
+            protocol: address(aavePool),
+            asset: address(usdc),
+            ratio: 4_000
+        });
+
+        vm.prank(owner);
+        vault.setAllocations(goodAllocs);
+
+        (address[] memory protocols, uint256[] memory ratios) = vault.getAllocations();
+        assertEq(protocols.length, 2);
+        assertEq(ratios.length, 2);
+        assertEq(ratios[0] + ratios[1], 10_000);
+    }
+}

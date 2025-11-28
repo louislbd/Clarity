@@ -18,10 +18,13 @@ interface IClarityVault is IERC4626 {
      * @return address[] memory The list of tokens in the vault.
      * @return uint256[] memory The corresponding allocation ratios for each token.
      */
-    function getAllocations() external view returns (address[] memory tokens, uint256[] memory ratios);
+    function getAllocations() external view returns (address[] memory, uint256[] memory);
 
     /// @notice Pauses the vault in case of emergency, preventing deposits and withdrawals
     function pause() external;
+
+    /// @notice Unpauses the vault
+    function unpause() external;
 
     /// @notice Checks if the vault is currently paused (no deposits/withdrawals allowed)
     function isPaused() external view returns (bool);
