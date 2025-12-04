@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import {Test} from "forge-std/Test.sol";
-import {Safe} from "../contracts/vaults/Safe.sol";
-import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IAavePool} from "../contracts/interfaces/IAavePool.sol";
-import {ClarityUtils} from "../contracts/ClarityUtils.sol";
+import { Test } from "forge-std/Test.sol";
+import { Safe } from "../contracts/vaults/Safe.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IAavePool } from "../contracts/interfaces/IAavePool.sol";
+import { IYoVault } from "../contracts/interfaces/IYoVault.sol";
+import { ClarityUtils } from "../contracts/ClarityUtils.sol";
 
 /// @dev Simple test ERC20 with 6 decimals for USDC-like behavior
 contract TestERC20 is ERC20 {
@@ -48,6 +49,34 @@ contract MockAavePool is IAavePool {
     }
 }
 
+contract MockYoVault is IYoVault {
+    uint256 public totalAssetsStored;
+    uint256 public totalShares;
+
+    function deposit(uint256 assets, address receiver) external returns (uint256 shares) {
+        // Simulate a successful deposit without moving tokens
+        shares = assets;
+        totalAssetsStored += assets;
+        totalShares += shares;
+    }
+
+    function redeem(uint256 shares, address receiver, address owner) external returns (uint256 assets) {
+        require(totalShares >= shares, "insufficient yoShares");
+        assets = shares;
+        totalShares -= shares;
+        totalAssetsStored -= assets;
+        // Do not actually transfer tokens; the Safe vault already handles balances/fees
+    }
+
+    function previewDeposit(uint256 assets) external pure returns (uint256 shares) {
+        return assets;
+    }
+
+    function previewRedeem(uint256 shares) external pure returns (uint256 assets) {
+        return shares;
+    }
+}
+
 contract SafeVaultTest is Test {
     TestERC20 internal usdc;
     MockAavePool internal aavePool;
@@ -60,24 +89,20 @@ contract SafeVaultTest is Test {
     uint256 internal constant INITIAL_USER_USDC = 1_000_000e6; // 1,000,000 USDC (6 decimals)
 
     function setUp() public {
-        // Deploy real implementations to the constant addresses used in ClarityUtils
+        // USDC + Aave setup (unchanged)
         TestERC20 realUsdcImpl = new TestERC20("Test USDC", "tUSDC", 6);
         MockAavePool realAaveImpl = new MockAavePool();
 
-        // Copy the bytecode to the constant addresses of ClarityUtils
         address usdcAddr = ClarityUtils.USDC_BASE;
         address aaveAddr = ClarityUtils.AAVE_POOL_BASE;
 
-        bytes memory usdcCode = address(realUsdcImpl).code;
-        bytes memory aaveCode = address(realAaveImpl).code;
-
-        vm.etch(usdcAddr, usdcCode);
-        vm.etch(aaveAddr, aaveCode);
+        vm.etch(usdcAddr, address(realUsdcImpl).code);
+        vm.etch(aaveAddr, address(realAaveImpl).code);
 
         usdc = TestERC20(usdcAddr);
         aavePool = MockAavePool(aaveAddr);
 
-        // allocations use exactly the constants
+        // allocations for the main vault (USDC on Aave)
         Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
         allocs[0] = Safe.Allocation({
             protocol: aaveAddr,
@@ -94,6 +119,15 @@ contract SafeVaultTest is Test {
         );
 
         usdc.mint(user, INITIAL_USER_USDC);
+
+        TestERC20 realEurcImpl = new TestERC20("Test EURC", "tEURC", 6);
+        MockYoVault realYoImpl = new MockYoVault();
+
+        address eurcAddr = ClarityUtils.EURC_BASE;
+        address yoAddr   = ClarityUtils.YO_EUR;
+
+        vm.etch(eurcAddr, address(realEurcImpl).code);
+        vm.etch(yoAddr,   address(realYoImpl).code);
     }
 
 
@@ -115,7 +149,6 @@ contract SafeVaultTest is Test {
         vm.startPrank(user);
         usdc.approve(address(vault), amount);
 
-        // previewDeposit should account for entry fee
         uint256 expectedShares = vault.previewDeposit(amount);
         assertGt(expectedShares, 0);
 
@@ -123,17 +156,15 @@ contract SafeVaultTest is Test {
         vm.stopPrank();
 
         assertEq(shares, expectedShares, "shares mismatch");
-
-        // Vault should have minted shares to user
         assertEq(vault.balanceOf(user), shares, "user shares");
 
-        // Fee should have been taken in USDC from the vault
         uint256 fee = ClarityUtils._feeOnTotal(amount, vault.entryFeeBP());
-        // All assets go to Aave via mock, fee sent to feeRecipient from vault's balance
-        assertEq(usdc.balanceOf(feeRecipient), fee, "fee recipient USDC balance");
+        uint256 netAssets = amount - fee;
 
-        // Check mock Aave balance
-        assertEq(aavePool.balances(address(usdc)), amount, "Aave mock balance");
+        // Fee goes to recipient
+        assertEq(usdc.balanceOf(feeRecipient), fee, "fee recipient USDC balance");
+        // Only netAssets are supplied to Aave
+        assertEq(aavePool.balances(address(usdc)), netAssets, "Aave mock balance");
     }
 
     function testWithdrawUnwindsFromAaveAndChargesFee() public {
@@ -278,5 +309,97 @@ contract SafeVaultTest is Test {
         assertEq(protocols.length, 2);
         assertEq(ratios.length, 2);
         assertEq(ratios[0] + ratios[1], 10_000);
+    }
+
+    function testDepositWithEURCAndYoVaultAlloc() public {
+        TestERC20 eurc = TestERC20(ClarityUtils.EURC_BASE);
+        MockYoVault yoVault = MockYoVault(ClarityUtils.YO_EUR);
+
+        Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
+        allocs[0] = Safe.Allocation({
+            protocol: ClarityUtils.YO_EUR,
+            asset:    ClarityUtils.EURC_BASE,
+            ratio:    10_000
+        });
+
+        vm.prank(owner);
+        Safe eurcVault = new Safe(
+            ERC20(ClarityUtils.EURC_BASE),
+            owner,
+            allocs,
+            feeRecipient
+        );
+
+        uint256 amount = 1_000e6;
+        eurc.mint(user, amount);
+
+        vm.startPrank(user);
+        eurc.approve(address(eurcVault), amount);
+        uint256 expectedShares = eurcVault.previewDeposit(amount);
+        uint256 shares = eurcVault.deposit(amount, user);
+        vm.stopPrank();
+
+        assertEq(shares, expectedShares, "EURC deposit: shares mismatch");
+        assertEq(eurcVault.balanceOf(user), shares, "EURC deposit: user shares");
+
+        uint256 fee = ClarityUtils._feeOnTotal(amount, eurcVault.entryFeeBP());
+        // Only fee transfer is observable on-chain
+        assertEq(eurc.balanceOf(feeRecipient), fee, "EURC deposit: fee recipient balance");
+
+        // We at least ensure the yoVault hook was called by checking its internal accounting
+        assertEq(yoVault.totalAssetsStored(), amount - fee, "EURC deposit: yoVault accounted assets");
+    }
+
+    function testWithdrawWithEURCAndYoVaultAlloc() public {
+        TestERC20 eurc = TestERC20(ClarityUtils.EURC_BASE);
+        MockYoVault yoVault = MockYoVault(ClarityUtils.YO_EUR);
+
+        Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
+        allocs[0] = Safe.Allocation({
+            protocol: ClarityUtils.YO_EUR,
+            asset:    ClarityUtils.EURC_BASE,
+            ratio:    10_000
+        });
+
+        vm.prank(owner);
+        Safe eurcVault = new Safe(
+            ERC20(ClarityUtils.EURC_BASE),
+            owner,
+            allocs,
+            feeRecipient
+        );
+
+        uint256 amount = 1_000e6;
+        eurc.mint(user, amount);
+
+        // Deposit full amount
+        vm.startPrank(user);
+        eurc.approve(address(eurcVault), amount);
+        eurcVault.deposit(amount, user);
+        vm.stopPrank();
+
+        uint256 withdrawAssets = 500e6;
+        uint256 expectedSharesBurned = eurcVault.previewWithdraw(withdrawAssets);
+
+        uint256 beforeUser = eurc.balanceOf(user);
+        uint256 beforeFee  = eurc.balanceOf(feeRecipient);
+        uint256 beforeYoAccounted = yoVault.totalAssetsStored();
+
+        vm.startPrank(user);
+        uint256 burnedShares = eurcVault.withdraw(withdrawAssets, user, user);
+        vm.stopPrank();
+
+        assertEq(burnedShares, expectedSharesBurned, "EURC withdraw: burned shares mismatch");
+
+        uint256 afterUser = eurc.balanceOf(user);
+        uint256 afterFee  = eurc.balanceOf(feeRecipient);
+        uint256 afterYoAccounted = yoVault.totalAssetsStored();
+
+        // User receives some assets
+        assertGt(afterUser, beforeUser, "EURC withdraw: user should receive assets");
+        // Fee recipient gains more fees (exit fee on top of previous entry fee)
+        assertGt(afterFee, beforeFee, "EURC withdraw: fee recipient should gain fees");
+        // YoVault internal accounting decreases
+        assertLt(afterYoAccounted, beforeYoAccounted, "EURC withdraw: yoVault accounted assets should decrease");
     }
 }

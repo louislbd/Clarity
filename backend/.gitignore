@@ -1,29 +1,26 @@
-# Node modules
+# Node / npm
 /node_modules
+/package-lock.json  # optional: keep if you want locked deps in repo
 
-# Compilation output
-/dist
-
-# pnpm deploy output
-/bundle
-
-# Hardhat Build Artifacts
-/artifacts
-
-# Hardhat compilation (v2) support directory
+# Foundry / Forge
+/lib
 /cache
-
-# Typechain output
-/types
-
-# Hardhat coverage reports
+/out
+/broadcast
 /coverage
 
-# Optional npm cache directory
-.npm
+# Hardhat
+/artifacts
 
-# Optional eslint cache
-.eslintcache
+# Typechain
+/types
 
-# dotenv environment variable files
+# Build output (frontend or scripts)
+/dist
+/bundle
+
+# Environment & tools
 .env
+.env.*
+.npm
+.eslintcache
