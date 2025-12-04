@@ -8,9 +8,9 @@ import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import { Math } from "@openzeppelin/contracts/utils/math/Math.sol";
 import { IClarityVault } from "../interfaces/IClarityVault.sol";
 import { IAavePool } from "../interfaces/IAavePool.sol";
+import { IYoVault } from "../interfaces/IYoVault.sol";
 import { ClarityUtils } from "../ClarityUtils.sol";
 
 
@@ -21,7 +21,6 @@ import { ClarityUtils } from "../ClarityUtils.sol";
  */
 contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
     using SafeERC20 for IERC20;
-    using Math for uint256;
 
     /// @notice Allocation structure
     struct Allocation {
@@ -96,10 +95,10 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         override
         returns (address[] memory _tokens, uint256[] memory _ratios)
     {
-        uint256 n = allocations.length;
-        _tokens = new address[](n);
-        _ratios = new uint256[](n);
-        for (uint256 i = 0; i < n; ++i) {
+        uint256 allocationLength = allocations.length;
+        _tokens = new address[](allocationLength);
+        _ratios = new uint256[](allocationLength);
+        for (uint256 i; i < allocationLength; i++) {
             _tokens[i] = allocations[i].protocol;
             _ratios[i] = allocations[i].ratio;
         }
@@ -113,7 +112,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         require(_newAllocations.length > 0, NoAllocationsDefined());
         uint256 totalRatio;
         delete allocations;
-        for (uint256 i = 0; i < _newAllocations.length; ++i) {
+        for (uint256 i; i < _newAllocations.length; i++) {
             allocations.push(_newAllocations[i]);
             totalRatio += _newAllocations[i].ratio;
         }
@@ -130,6 +129,50 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         return 12000;
     }
 
+    // ---------- PUBLIC ERC-4626 ENTRYPOINTS ----------
+
+    /// @inheritdoc IERC4626
+    function deposit(uint256 assets, address receiver)
+        public
+        override(ERC4626, IERC4626)
+        whenNotPaused
+        returns (uint256 shares)
+    {
+        shares = super.deposit(assets, receiver);
+    }
+
+    /// @inheritdoc IERC4626
+    function mint(uint256 shares, address receiver)
+        public
+        override(ERC4626, IERC4626)
+        whenNotPaused
+        returns (uint256 assets)
+    {
+        assets = super.mint(shares, receiver);
+    }
+
+    /// @inheritdoc IERC4626
+    function withdraw(uint256 assets, address receiver, address owner)
+        public
+        override(ERC4626, IERC4626)
+        whenNotPaused
+        returns (uint256 shares)
+    {
+        shares = super.withdraw(assets, receiver, owner);
+    }
+
+    /// @inheritdoc IERC4626
+    function redeem(uint256 shares, address receiver, address owner)
+        public
+        override(ERC4626, IERC4626)
+        whenNotPaused
+        returns (uint256 assets)
+    {
+        assets = super.redeem(shares, receiver, owner);
+    }
+
+    // ---------- INTERNAL HOOKS WITH CLARITY LOGIC ----------
+
     /**
      * @notice Deposit assets into the vault.
      * @param _caller The address initiating the deposit.
@@ -142,30 +185,35 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         address _receiver,
         uint256 _assets,
         uint256 _shares
-    ) internal override whenNotPaused {
+    ) internal override {
         uint256 fee = ClarityUtils._feeOnTotal(_assets, entryFeeBP);
+        uint256 netAssets = _assets - fee;
 
-        for (uint256 i = 0; i < allocations.length; ++i) {
+        // Allocate only netAssets
+        for (uint256 i; i < allocations.length; i++) {
             Allocation memory alloc = allocations[i];
-            // TODO: Use safe math here
-            uint256 allocationAmount = (_assets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
-            require(allocationAmount <= _assets, InvalidAllocationRatio());
+            uint256 allocationAmount = (netAssets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            require(allocationAmount <= netAssets, InvalidAllocationRatio());
 
             IERC20(alloc.asset).approve(alloc.protocol, allocationAmount);
 
             if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.USDC_BASE) {
                 IAavePool(alloc.protocol).supply(alloc.asset, allocationAmount, address(this), 0);
-            } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE) {
-                // Add asset conversion logic here if needed
+            } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
+                IAavePool(alloc.protocol).supply(alloc.asset, allocationAmount, address(this), 0);
+            } else if (alloc.protocol == ClarityUtils.YO_EUR && alloc.asset == ClarityUtils.EURC_BASE) {
+                IYoVault(alloc.protocol).deposit(allocationAmount, address(this));
             } else {
-                revert();
+                revert InvalidProtocolOrAsset();
             }
         }
 
-        super._deposit(_caller, _receiver, _assets, _shares);
+        // Shares should reflect only the net assets that actually work
+        super._deposit(_caller, _receiver, netAssets, _shares);
 
+        // Fee is taken in the vault's underlying asset
         if (fee > 0 && feeRecipient != address(0)) {
-            IERC20(ClarityUtils.USDC_BASE).safeTransfer(feeRecipient, fee);
+            IERC20(asset()).safeTransfer(feeRecipient, fee);
         }
     }
 
@@ -183,7 +231,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         address _owner,
         uint256 _assets,
         uint256 _shares
-    ) internal override whenNotPaused {
+    ) internal override {
         // Unwind allocations proportionally
         for (uint256 i = 0; i < allocations.length; ++i) {
             Allocation memory alloc = allocations[i];
@@ -192,12 +240,15 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
             if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.USDC_BASE) {
                 IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
+            } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
+                IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
+            } else if (alloc.protocol == ClarityUtils.YO_EUR && alloc.asset == ClarityUtils.EURC_BASE) {
+                IYoVault(alloc.protocol).redeem(allocationAmount, address(this), address(this));
             } else {
                 revert InvalidProtocolOrAsset();
             }
         }
 
-        // Let ERC4626 handle the share burning and bookkeeping
         super._withdraw(_caller, _receiver, _owner, _assets, _shares);
 
         // Calculate what the vault actually holds in "asset()" after unwind + _withdraw
@@ -218,21 +269,6 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         }
     }
 
-
-    /**
-     * @notice Redeem shares from the vault.
-     * @param _shares The amount of shares to burn.
-     * @param _receiver The address receiving the withdrawn assets.
-     * @param _owner The address owning the shares being redeemed.
-     */
-    function redeem(
-        uint256 _shares,
-        address _receiver,
-        address _owner
-    ) public override(ERC4626, IERC4626) whenNotPaused returns (uint256 assets) {
-        assets = previewRedeem(_shares);
-        super._withdraw(msg.sender, _receiver, _owner, _shares, assets);
-    }
 
     /**
      * @notice Pause the vault in case of emergency.
