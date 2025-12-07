@@ -35,6 +35,17 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
     uint256 public exitFeeBP = 50;   // 0.5%
     address public feeRecipient;
 
+    /// @notice Emitted when a user deposits assets into the vault
+    event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
+
+    /// @notice Emitted when a user mints shares in the vault
+    event Mint(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
+
+    /// @notice Emitted when a user withdraws assets from the vault
+    event Withdraw(address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares);
+
+    /// @notice Emitted when a user redeems shares from the vault
+    event Redeem(address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares);
 
     /// @notice Emitted when the vault is paused
     event EmergencyPaused(address indexed caller);
@@ -126,7 +137,64 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
      */
     function getAPY() external view override returns (uint256) {
         // To be implemented according to vault performance data
-        return 12000;
+        return 400;
+    }
+
+    /**
+     * @notice Set a new APY for the vault.
+     * @dev Only callable by the owner.
+     * @param _newAPY The new APY value.
+     */
+    function setAPY(uint256 _newAPY) external onlyOwner {
+        currentAPY = _newAPY;
+    }
+
+    /**
+     * @notice Pause the vault in case of emergency.
+     * @dev Only callable by the owner.
+     */
+    function pause() external override onlyOwner {
+        _pause();
+        emit EmergencyPaused(msg.sender);
+    }
+
+    /**
+     * @notice Unpause the vault in case of emergency.
+     * @dev Only callable by the owner.
+     */
+    function unpause() external override onlyOwner {
+        _unpause();
+        emit EmergencyUnpaused(msg.sender);
+    }
+
+    /**
+     * @notice Checks if the vault is currently paused
+     * @return bool True if the vault is paused, false otherwise.
+     */
+    function isPaused() external view override returns (bool) {
+        return paused();
+    }
+
+    /**
+     * @notice Set a new entry fee in basis points.
+     * @dev Only callable by the owner.
+     * @param _newFeeBP The new entry fee in basis points.
+     */
+    function setEntryFeeBP(uint256 _newFeeBP) external onlyOwner {
+        require(_newFeeBP <= 1000, FeeTooHigh());
+        entryFeeBP = _newFeeBP;
+        emit EntryFeeUpdated(_newFeeBP);
+    }
+
+    /**
+     * @notice Set a new exit fee in basis points.
+     * @dev Only callable by the owner.
+     * @param _newFeeBP The new exit fee in basis points.
+     */
+    function setExitFeeBP(uint256 _newFeeBP) external onlyOwner {
+        require(_newFeeBP <= 1000, FeeTooHigh());
+        exitFeeBP = _newFeeBP;
+        emit ExitFeeUpdated(_newFeeBP);
     }
 
     // ---------- PUBLIC ERC-4626 ENTRYPOINTS ----------
@@ -139,6 +207,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         returns (uint256 shares)
     {
         shares = super.deposit(assets, receiver);
+        emit Deposit(msg.sender, receiver, assets, shares);
     }
 
     /// @inheritdoc IERC4626
@@ -149,6 +218,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         returns (uint256 assets)
     {
         assets = super.mint(shares, receiver);
+        emit Mint(msg.sender, receiver, assets, shares);
     }
 
     /// @inheritdoc IERC4626
@@ -159,6 +229,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         returns (uint256 shares)
     {
         shares = super.withdraw(assets, receiver, owner);
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
     }
 
     /// @inheritdoc IERC4626
@@ -169,6 +240,47 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         returns (uint256 assets)
     {
         assets = super.redeem(shares, receiver, owner);
+        emit Redeem(msg.sender, receiver, owner, assets, shares);
+    }
+
+    /**
+     * @notice Preview the amount of shares received for a given asset deposit, accounting for entry fees.
+     * @param _assets The amount of assets to deposit.
+     * @return uint256 The amount of shares that would be minted.
+     */
+    function previewDeposit(uint256 _assets) public view override(ERC4626, IERC4626) returns (uint256) {
+        uint256 fee = ClarityUtils._feeOnTotal(_assets, entryFeeBP);
+        return super.previewDeposit(_assets - fee);
+    }
+
+    /**
+     * @notice Preview the amount of assets required to mint a given amount of shares, accounting for entry fees.
+     * @param _shares The amount of shares to mint.
+     * @return uint256 The amount of assets required for the mint.
+     */
+    function previewMint(uint256 _shares) public view override(ERC4626, IERC4626) returns (uint256) {
+        uint256 assets = super.previewMint(_shares);
+        return assets + ClarityUtils._feeOnRaw(assets, entryFeeBP);
+    }
+
+    /**
+     * @notice Preview the amount of shares burned for a given asset withdrawal, accounting for exit fees.
+     * @param _assets The amount of assets to withdraw.
+     * @return uint256 The amount of shares that would be burned.
+     */
+    function previewWithdraw(uint256 _assets) public view override(ERC4626, IERC4626) returns (uint256) {
+        uint256 fee = ClarityUtils._feeOnRaw(_assets, exitFeeBP);
+        return super.previewWithdraw(_assets + fee);
+    }
+
+    /**
+     * @notice Preview the amount of assets received for a given share redemption, accounting for exit fees.
+     * @param _shares The amount of shares to redeem.
+     * @return uint256 The amount of assets that would be received.
+     */
+    function previewRedeem(uint256 _shares) public view override(ERC4626, IERC4626) returns (uint256) {
+        uint256 assets = super.previewRedeem(_shares);
+        return assets - ClarityUtils._feeOnTotal(assets, exitFeeBP);
     }
 
     // ---------- INTERNAL HOOKS WITH CLARITY LOGIC ----------
@@ -267,103 +379,5 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         if (net > 0) {
             IERC20(asset()).safeTransfer(_receiver, net);
         }
-    }
-
-
-    /**
-     * @notice Pause the vault in case of emergency.
-     * @dev Only callable by the owner.
-     */
-    function pause() external override onlyOwner {
-        _pause();
-        emit EmergencyPaused(msg.sender);
-    }
-
-    /**
-     * @notice Unpause the vault in case of emergency.
-     * @dev Only callable by the owner.
-     */
-    function unpause() external override onlyOwner {
-        _unpause();
-        emit EmergencyUnpaused(msg.sender);
-    }
-
-    /**
-     * @notice Checks if the vault is currently paused
-     * @return bool True if the vault is paused, false otherwise.
-     */
-    function isPaused() external view override returns (bool) {
-        return paused();
-    }
-
-    /**
-     * @notice Set a new APY for the vault.
-     * @dev Only callable by the owner.
-     * @param _newAPY The new APY value.
-     */
-    function setAPY(uint256 _newAPY) external onlyOwner {
-        currentAPY = _newAPY;
-    }
-
-    /**
-     * @notice Set a new entry fee in basis points.
-     * @dev Only callable by the owner.
-     * @param _newFeeBP The new entry fee in basis points.
-     */
-    function setEntryFeeBP(uint256 _newFeeBP) external onlyOwner {
-        require(_newFeeBP <= 1000, FeeTooHigh());
-        entryFeeBP = _newFeeBP;
-        emit EntryFeeUpdated(_newFeeBP);
-    }
-
-    /**
-     * @notice Set a new exit fee in basis points.
-     * @dev Only callable by the owner.
-     * @param _newFeeBP The new exit fee in basis points.
-     */
-    function setExitFeeBP(uint256 _newFeeBP) external onlyOwner {
-        require(_newFeeBP <= 1000, FeeTooHigh());
-        exitFeeBP = _newFeeBP;
-        emit ExitFeeUpdated(_newFeeBP);
-    }
-
-    /**
-     * @notice Preview the amount of shares received for a given asset deposit, accounting for entry fees.
-     * @param _assets The amount of assets to deposit.
-     * @return uint256 The amount of shares that would be minted.
-     */
-    function previewDeposit(uint256 _assets) public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 fee = ClarityUtils._feeOnTotal(_assets, entryFeeBP);
-        return super.previewDeposit(_assets - fee);
-    }
-
-    /**
-     * @notice Preview the amount of assets required to mint a given amount of shares, accounting for entry fees.
-     * @param _shares The amount of shares to mint.
-     * @return uint256 The amount of assets required for the mint.
-     */
-    function previewMint(uint256 _shares) public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 assets = super.previewMint(_shares);
-        return assets + ClarityUtils._feeOnRaw(assets, entryFeeBP);
-    }
-
-    /**
-     * @notice Preview the amount of shares burned for a given asset withdrawal, accounting for exit fees.
-     * @param _assets The amount of assets to withdraw.
-     * @return uint256 The amount of shares that would be burned.
-     */
-    function previewWithdraw(uint256 _assets) public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 fee = ClarityUtils._feeOnRaw(_assets, exitFeeBP);
-        return super.previewWithdraw(_assets + fee);
-    }
-
-    /**
-     * @notice Preview the amount of assets received for a given share redemption, accounting for exit fees.
-     * @param _shares The amount of shares to redeem.
-     * @return uint256 The amount of assets that would be received.
-     */
-    function previewRedeem(uint256 _shares) public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 assets = super.previewRedeem(_shares);
-        return assets - ClarityUtils._feeOnTotal(assets, exitFeeBP);
     }
 }
