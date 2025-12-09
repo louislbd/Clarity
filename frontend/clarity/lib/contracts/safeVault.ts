@@ -3,7 +3,7 @@ import SafeJson from "./Safe.json";
 
 // address of DeploySafeVault#SafeVault on Base Sepolia
 export const SAFE_VAULT_ADDRESS =
-  "0xd81BD2Da8f01E9cc3657C8168c4d7Df8Fbe78bA8";
+  "0xa1F7D8F9b2f0549e1ce95cCA5fAa6eBA96154bD0";
 
 export const SAFE_VAULT_ABI = SafeJson.abi as Abi;
 

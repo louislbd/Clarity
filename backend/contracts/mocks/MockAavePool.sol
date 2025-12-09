@@ -4,6 +4,7 @@ pragma solidity ^0.8.28;
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import { MockERC20 } from "./MockERC20.sol";
 
 contract MockAavePool {
     using SafeERC20 for IERC20;
@@ -36,7 +37,8 @@ contract MockAavePool {
         require(amount > 0, "Amount must be > 0");
 
         IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
-        ERC20(aToken).transfer(onBehalfOf, amount); // or a mint() if your MockERC20 supports it
+
+        MockERC20(aToken).mint(onBehalfOf, amount);
     }
 
     function withdraw(
@@ -48,9 +50,13 @@ contract MockAavePool {
         require(aToken != address(0), "Asset not supported");
         require(amount > 0, "Amount must be > 0");
 
-        ERC20(aToken).transferFrom(msg.sender, address(this), amount);
+        // Burn aTokens from owner
+        MockERC20(aToken).burn(msg.sender, amount);
+
+        // Transfer underlying to receiver
         IERC20(asset).safeTransfer(to, amount);
 
         return amount;
     }
+
 }

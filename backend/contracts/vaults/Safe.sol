@@ -13,26 +13,26 @@ import { IAavePool } from "../interfaces/IAavePool.sol";
 import { IYoVault } from "../interfaces/IYoVault.sol";
 import { ClarityUtils } from "../ClarityUtils.sol";
 
-
 /**
  * @title Safe Vault (Clarity)
  * @author louislbd
  * @notice An ERC-4626 compliant vault implementing a safe yield strategy for Clarity.
+ * @dev This vault supports ONLY EURC as the underlying asset and allocates it across multiple protocols.
  */
 contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
     using SafeERC20 for IERC20;
 
-    /// @notice Allocation structure
+
+    /// @notice Allocation structure - simplified for single underlying asset (EURC)
     struct Allocation {
-        address protocol;
-        address asset;
-        uint256 ratio;
+        address protocol;  // e.g., AAVE_POOL_BASE or YO_EUR_BASE
+        uint256 ratio;     // Allocation percentage in basis points (out of 10000)
     }
 
     Allocation[] private allocations;
     uint256 private currentAPY;
-    uint256 public entryFeeBP = 100; // 1.0%
-    uint256 public exitFeeBP = 50;   // 0.5%
+    uint256 public entryFeeBP = 100;  // 1.0%
+    uint256 public exitFeeBP = 50;    // 0.5%
     address public feeRecipient;
 
     /// @notice Emitted when the vault is paused
@@ -58,7 +58,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     /**
      * @notice Constructor for the Safe vault.
-     * @param _asset The underlying asset of the vault.
+     * @param _asset The underlying asset of the vault (must be EURC).
      * @param _owner The owner of the vault.
      * @param _allocations The initial allocation ratios for the vault.
      * @param _feeRecipient The address receiving the fees.
@@ -85,8 +85,8 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     /**
      * @notice Get the current allocation ratios of the vault.
-     * @return _tokens memory The list of tokens in the vault.
-     * @return _ratios memory The corresponding allocation ratios for each token.
+     * @return _tokens memory The list of protocols in the vault.
+     * @return _ratios memory The corresponding allocation ratios for each protocol.
      */
     function getAllocations()
         external
@@ -123,8 +123,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
      * @notice Get the current APY of the vault.
      * @return uint256 The APY value.
      */
-    function getAPY() external view override returns (uint256) {
-        // To be implemented according to vault performance data
+    function getAPY() external pure override returns (uint256) {
         return 400;
     }
 
@@ -194,8 +193,17 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         whenNotPaused
         returns (uint256 shares)
     {
-        shares = super.deposit(assets, receiver);
-        emit Deposit(msg.sender, receiver, assets, shares);
+        require(assets <= maxDeposit(receiver), "ERC4626: deposit more than max");
+
+        shares = previewDeposit(assets);
+
+        // Pull assets from caller
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), assets);
+
+        // Process deposit: fee handling, protocol allocation, share minting
+        _processDeposit(receiver, assets, shares);
+
+        return shares;
     }
 
     /// @inheritdoc IERC4626
@@ -205,7 +213,17 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         whenNotPaused
         returns (uint256 assets)
     {
-        assets = super.mint(shares, receiver);
+        require(shares <= maxMint(receiver), "ERC4626: mint more than max");
+
+        assets = previewMint(shares);
+
+        // Pull assets from caller
+        IERC20(asset()).safeTransferFrom(msg.sender, address(this), assets);
+
+        // Process deposit: fee handling, protocol allocation, share minting
+        _processDeposit(receiver, assets, shares);
+
+        return assets;
     }
 
     /// @inheritdoc IERC4626
@@ -215,8 +233,23 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         whenNotPaused
         returns (uint256 shares)
     {
-        shares = super.withdraw(assets, receiver, owner);
-        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+        require(assets <= maxWithdraw(owner), "ERC4626: withdraw more than max");
+
+        shares = previewWithdraw(assets);
+
+        // Check allowance
+        if (msg.sender != owner) {
+            uint256 allowed = allowance(owner, msg.sender);
+            if (allowed != type(uint256).max) {
+                require(allowed >= shares, "ERC4626: insufficient allowance");
+                _approve(owner, msg.sender, allowed - shares);
+            }
+        }
+
+        // Process withdrawal: protocol unwinding, fee handling, share burning
+        _processWithdraw(receiver, owner, assets, shares);
+
+        return shares;
     }
 
     /// @inheritdoc IERC4626
@@ -226,7 +259,23 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         whenNotPaused
         returns (uint256 assets)
     {
-        assets = super.redeem(shares, receiver, owner);
+        require(shares <= maxRedeem(owner), "ERC4626: redeem more than max");
+
+        assets = previewRedeem(shares);
+
+        // Check allowance
+        if (msg.sender != owner) {
+            uint256 allowed = allowance(owner, msg.sender);
+            if (allowed != type(uint256).max) {
+                require(allowed >= shares, "ERC4626: insufficient allowance");
+                _approve(owner, msg.sender, allowed - shares);
+            }
+        }
+
+        // Process withdrawal: protocol unwinding, fee handling, share burning
+        _processWithdraw(receiver, owner, assets, shares);
+
+        return assets;
     }
 
     /**
@@ -269,101 +318,106 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         return assets - ClarityUtils._feeOnTotal(assets, exitFeeBP);
     }
 
-    // ---------- INTERNAL HOOKS WITH CLARITY LOGIC ----------
+    // ---------- INTERNAL PROCESSING LOGIC ----------
 
     /**
-     * @notice Deposit assets into the vault.
-     * @param _caller The address initiating the deposit.
-     * @param _receiver The address receiving the vault shares.
-     * @param _assets The amount of assets to deposit.
-     * @param _shares The amount of shares to mint.
+     * @notice Process a deposit: deduct entry fees, allocate to protocols, mint shares.
+     * @param receiver The address receiving the vault shares.
+     * @param assets The total assets being deposited.
+     * @param shares The amount of shares to mint.
      */
-    function _deposit(
-        address _caller,
-        address _receiver,
-        uint256 _assets,
-        uint256 _shares
-    ) internal override {
-        uint256 fee = ClarityUtils._feeOnTotal(_assets, entryFeeBP);
-        uint256 netAssets = _assets - fee;
+    function _processDeposit(
+        address receiver,
+        uint256 assets,
+        uint256 shares
+    ) internal {
+        address eurcToken = asset();
 
-        // Allocate only netAssets
-        for (uint256 i; i < allocations.length; i++) {
+        uint256 fee = ClarityUtils._feeOnTotal(assets, entryFeeBP);
+        uint256 netAssets = assets - fee;
+
+        if (fee > 0 && feeRecipient != address(0)) {
+            IERC20(eurcToken).safeTransfer(feeRecipient, fee);
+        }
+
+        for (uint256 i = 0; i < allocations.length; ++i) {
             Allocation memory alloc = allocations[i];
-            uint256 allocationAmount = (netAssets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            uint256 allocationAmount =
+                (netAssets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
             require(allocationAmount <= netAssets, InvalidAllocationRatio());
 
-            IERC20(alloc.asset).approve(alloc.protocol, allocationAmount);
+            IERC20(eurcToken).approve(alloc.protocol, allocationAmount);
 
-            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.USDC_BASE) {
-                IAavePool(alloc.protocol).supply(alloc.asset, allocationAmount, address(this), 0);
-            } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
-                IAavePool(alloc.protocol).supply(alloc.asset, allocationAmount, address(this), 0);
-            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
+            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE) {
+                IAavePool(alloc.protocol).supply(
+                    eurcToken,
+                    allocationAmount,
+                    address(this),
+                    0
+                );
+            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE) {
                 IYoVault(alloc.protocol).deposit(allocationAmount, address(this));
             } else {
                 revert InvalidProtocolOrAsset();
             }
+
+            IERC20(eurcToken).approve(alloc.protocol, 0);
         }
 
-        // Shares should reflect only the net assets that actually work
-        super._deposit(_caller, _receiver, netAssets, _shares);
-
-        // Fee is taken in the vault's underlying asset
-        if (fee > 0 && feeRecipient != address(0)) {
-            IERC20(asset()).safeTransfer(feeRecipient, fee);
-        }
+        _mint(receiver, shares);
+        emit Deposit(msg.sender, receiver, assets, shares);
     }
 
     /**
-     * @notice Withdraw assets from the vault.
-     * @param _caller The address initiating the withdrawal.
-     * @param _receiver The address receiving the withdrawn assets.
-     * @param _owner The address owning the shares being redeemed.
-     * @param _assets The amount of assets to withdraw (as per ERC4626 preview logic).
-     * @param _shares The amount of shares to burn.
+     * @notice Process a withdrawal: unwind from protocols, deduct exit fees, burn shares.
+     * @param receiver The address receiving the withdrawn assets.
+     * @param owner The address owning the shares being redeemed.
+     * @param assets The amount of assets to withdraw.
+     * @param shares The amount of shares to burn.
      */
-    function _withdraw(
-        address _caller,
-        address _receiver,
-        address _owner,
-        uint256 _assets,
-        uint256 _shares
-    ) internal override {
-        // Unwind allocations proportionally
+    function _processWithdraw(
+        address receiver,
+        address owner,
+        uint256 assets,
+        uint256 shares
+    ) internal {
+        address eurcToken = asset();
+
+        uint256 fee = ClarityUtils._feeOnRaw(assets, exitFeeBP);
+        uint256 amountToWithdraw = assets - fee;
+
         for (uint256 i = 0; i < allocations.length; ++i) {
             Allocation memory alloc = allocations[i];
-            uint256 allocationAmount = (_assets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
-            require(allocationAmount <= _assets, InvalidAllocationRatio());
+            uint256 allocationAmount =
+                (amountToWithdraw * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            require(allocationAmount <= amountToWithdraw, InvalidAllocationRatio());
 
-            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.USDC_BASE) {
-                IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
-            } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
-                IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
-            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
-                IYoVault(alloc.protocol).redeem(allocationAmount, address(this), address(this));
+            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE) {
+                IAavePool(alloc.protocol).withdraw(
+                    eurcToken,
+                    allocationAmount,
+                    address(this)
+                );
+            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE) {
+                IYoVault(alloc.protocol).redeem(
+                    allocationAmount,
+                    address(this),
+                    address(this)
+                );
             } else {
                 revert InvalidProtocolOrAsset();
             }
         }
 
-        super._withdraw(_caller, _receiver, _owner, _assets, _shares);
-
-        // Calculate what the vault actually holds in "asset()" after unwind + _withdraw
-        uint256 balance = IERC20(asset()).balanceOf(address(this));
-        // Cap the realized assets to the minimum of what was requested and what the vault holds
-        uint256 realizedAssets = balance < _assets ? balance : _assets;
-
-        // Calculate fees on the effectively realized assets
-        uint256 fee = ClarityUtils._feeOnRaw(realizedAssets, exitFeeBP);
-        uint256 net = realizedAssets - fee;
-
-        // Distribute fees then send the net to the user
         if (fee > 0 && feeRecipient != address(0)) {
-            IERC20(asset()).safeTransfer(feeRecipient, fee);
+            IERC20(eurcToken).safeTransfer(feeRecipient, fee);
         }
-        if (net > 0) {
-            IERC20(asset()).safeTransfer(_receiver, net);
+
+        if (amountToWithdraw > 0) {
+            IERC20(eurcToken).safeTransfer(receiver, amountToWithdraw);
         }
+
+        _burn(owner, shares);
+        emit Withdraw(msg.sender, receiver, owner, assets, shares);
     }
 }

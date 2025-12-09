@@ -22,7 +22,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // MockUSDC deployed address
-const MOCK_USDC_ADDRESS = "0xf9d34BBe36B746187F7B4AF059B4711Fa736C277";
+const MOCK_EURC_ADDRESS = "0x08878E4722049586b02E2A8D2646C7E3164c6301";
 
 // ERC20 approve ABI fragment
 const ERC20_ABI = [
@@ -123,7 +123,7 @@ export default function SafeVaultPage() {
   const onApprove = () => {
     if (!address || !amount) return;
     writeApprove({
-      address: MOCK_USDC_ADDRESS,
+      address: MOCK_EURC_ADDRESS,
       abi: ERC20_ABI,
       functionName: "approve",
       args: [SAFE_VAULT_ADDRESS, parseUnits(amount, SAFE_VAULT_DECIMALS)],
