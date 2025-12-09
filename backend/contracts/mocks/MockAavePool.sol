@@ -1,25 +1,56 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-import { IAavePool } from "../interfaces/IAavePool.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
-/// @dev Minimal mock Aave pool to track supply/withdraw calls
-contract MockAavePool is IAavePool {
-    event Supplied(address asset, uint256 amount, address onBehalfOf, uint16 referralCode);
-    event Withdrawn(address asset, uint256 amount, address to);
+contract MockAavePool {
+    using SafeERC20 for IERC20;
 
-    // simple accounting: asset => balance
-    mapping(address => uint256) public balances;
+    // underlying => aToken
+    mapping(address => address) public aTokens;
 
-    function supply(address asset, uint256 amount, address onBehalfOf, uint16 referralCode) external override {
-        balances[asset] += amount;
-        emit Supplied(asset, amount, onBehalfOf, referralCode);
+    // Simple access control (optional but recommended)
+    address public owner;
+
+    error NotOwner();
+
+    constructor() {
+        owner = msg.sender;
     }
 
-    function withdraw(address asset, uint256 amount, address to) external override returns (uint256) {
-        require(balances[asset] >= amount, "insufficient mock balance");
-        balances[asset] -= amount;
-        emit Withdrawn(asset, amount, to);
+    function setUnderlying(address underlying, address aToken) external {
+        if (msg.sender != owner) revert NotOwner();
+        aTokens[underlying] = aToken;
+    }
+
+    function supply(
+        address asset,
+        uint256 amount,
+        address onBehalfOf,
+        uint16 /* referralCode */
+    ) external {
+        address aToken = aTokens[asset];
+        require(aToken != address(0), "Asset not supported");
+        require(amount > 0, "Amount must be > 0");
+
+        IERC20(asset).safeTransferFrom(msg.sender, address(this), amount);
+        ERC20(aToken).transfer(onBehalfOf, amount); // or a mint() if your MockERC20 supports it
+    }
+
+    function withdraw(
+        address asset,
+        uint256 amount,
+        address to
+    ) external returns (uint256) {
+        address aToken = aTokens[asset];
+        require(aToken != address(0), "Asset not supported");
+        require(amount > 0, "Amount must be > 0");
+
+        ERC20(aToken).transferFrom(msg.sender, address(this), amount);
+        IERC20(asset).safeTransfer(to, amount);
+
         return amount;
     }
 }

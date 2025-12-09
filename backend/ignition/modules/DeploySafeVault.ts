@@ -1,76 +1,74 @@
 import { buildModule } from "@nomicfoundation/hardhat-ignition/modules";
-import { ethers } from "hardhat";
 
 const DeploySafeVaultModule = buildModule("DeploySafeVault", (m) => {
-  // Deploy mock ERC-20s
-  const mockUSDC = m.contract("MockERC20", [
-    "Mock USDC",
-    "USDC",
-    6,
-    m.getAccount(0), // deployer gets initial supply
-    1_000_000, // 1M USDC
-  ]);
+  const deployer = m.getAccount(0);
+  const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
-  const mockEURC = m.contract("MockERC20", [
-    "Mock EURC",
-    "EURC",
-    6,
-    m.getAccount(0),
-    1_000_000, // 1M EURC
-  ]);
+  // --- 1. Mock tokens (USDC & EURC) ---
 
-  // Deploy mock Aave pool
-  const mockAavePool = m.contract("MockAavePool", []);
+  const mockUSDC = m.contract(
+    "MockERC20",
+    ["Mock USDC", "USDC", 6, deployer, 1_000_000],
+    { id: "MockUSDC" }
+  );
 
-  // Deploy aUSDC token
-  const aUSDC = m.contract("MockERC20", [
-    "Aave USDC",
-    "aUSDC",
-    6,
-    ethers.ZeroAddress, // no initial supply
-    0,
-  ]);
+  const mockEURC = m.contract(
+    "MockERC20",
+    ["Mock EURC", "EURC", 6, deployer, 1_000_000],
+    { id: "MockEURC" }
+  );
 
-  // Deploy aEURC token
-  const aEURC = m.contract("MockERC20", [
-    "Aave EURC",
-    "aEURC",
-    6,
-    ethers.ZeroAddress,
-    0,
-  ]);
+  // --- 2. Mock Aave pool & aTokens ---
 
-  // Register assets in Aave pool
-  m.call(mockAavePool, "setUnderlying", [mockUSDC, aUSDC]);
-  m.call(mockAavePool, "setUnderlying", [mockEURC, aEURC]);
+  const mockAavePool = m.contract("MockAavePool", [], { id: "MockAavePool" });
 
-  // Deploy mock Yo EUR vault
-  const mockYoVault = m.contract("MockYoVault", [mockEURC]);
+  const aUSDC = m.contract(
+    "MockERC20",
+    ["Aave USDC", "aUSDC", 6, deployer, 0],
+    { id: "AUSDC" }
+  );
 
-  // Deploy Safe vault with allocations
-  // For this example: 50% Aave USDC, 50% Yo EUR
-  const safeVault = m.contract("Safe", [
-    mockUSDC, // underlying asset (the one users deposit)
-    m.getAccount(0), // owner (deployer)
-    [
-      {
-        protocol: mockAavePool,
-        asset: mockUSDC,
-        ratio: 5000, // 50%
-      },
-      {
-        protocol: mockYoVault,
-        asset: mockEURC,
-        ratio: 5000, // 50%
-      },
-    ],
-    m.getAccount(0), // feeRecipient (deployer for now)
-  ]);
+  const aEURC = m.contract(
+    "MockERC20",
+    ["Aave EURC", "aEURC", 6, deployer, 0],
+    { id: "AEURC" }
+  );
+
+  // Register underlying -> aToken in the mock pool
+  m.call(mockAavePool, "setUnderlying", [mockUSDC, aUSDC], { id: "SetUnderlyingUSDC" });
+  m.call(mockAavePool, "setUnderlying", [mockEURC, aEURC], { id: "SetUnderlyingEURC" });
+
+  // --- 3. Mock Yo vault (yoEUR) ---
+
+  const mockYoVault = m.contract("MockYoVault", [mockEURC], { id: "MockYoVault" });
+
+  // --- 4. Safe vault with mock allocations ---
+
+  const allocations = [
+    {
+      protocol: mockAavePool,
+      asset: mockUSDC,
+      ratio: 5000,
+    },
+    {
+      protocol: mockYoVault,
+      asset: mockEURC,
+      ratio: 5000,
+    },
+  ];
+
+  const safeVault = m.contract(
+    "Safe",
+    [mockUSDC, deployer, allocations, deployer],
+    { id: "SafeVault" }
+  );
 
   return {
     mockUSDC,
     mockEURC,
     mockAavePool,
+    aUSDC,
+    aEURC,
     mockYoVault,
     safeVault,
   };

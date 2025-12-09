@@ -21,7 +21,7 @@ export default function Footer() {
           <a href="https://discord.gg/snnrnWdG" target="_blank" rel="noopener noreferrer" aria-label="Discord" className="w-7 h-7 relative hover:scale-110 transition">
             <Image src="/logo-discord-color.png" alt="Discord" fill className="object-contain" />
           </a>
-          <a href="https://github.com/louislbd/liquidityDAO-Treasury" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="w-7 h-7 relative hover:scale-110 transition">
+          <a href="https://github.com/louislbd/Clarity" target="_blank" rel="noopener noreferrer" aria-label="GitHub" className="w-7 h-7 relative hover:scale-110 transition">
             <Image src="/logo-github.png" alt="GitHub" fill className="object-contain" />
           </a>
           <a href="https://dune.com/" target="_blank" rel="noopener noreferrer" aria-label="Dune" className="w-7 h-7 relative hover:scale-110 transition">

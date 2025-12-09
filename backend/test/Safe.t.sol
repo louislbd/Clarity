@@ -124,7 +124,7 @@ contract SafeVaultTest is Test {
         MockYoVault realYoImpl = new MockYoVault();
 
         address eurcAddr = ClarityUtils.EURC_BASE;
-        address yoAddr   = ClarityUtils.YO_EUR;
+        address yoAddr   = ClarityUtils.YO_EUR_BASE;
 
         vm.etch(eurcAddr, address(realEurcImpl).code);
         vm.etch(yoAddr,   address(realYoImpl).code);
@@ -313,11 +313,11 @@ contract SafeVaultTest is Test {
 
     function testDepositWithEURCAndYoVaultAlloc() public {
         TestERC20 eurc = TestERC20(ClarityUtils.EURC_BASE);
-        MockYoVault yoVault = MockYoVault(ClarityUtils.YO_EUR);
+        MockYoVault yoVault = MockYoVault(ClarityUtils.YO_EUR_BASE);
 
         Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
         allocs[0] = Safe.Allocation({
-            protocol: ClarityUtils.YO_EUR,
+            protocol: ClarityUtils.YO_EUR_BASE,
             asset:    ClarityUtils.EURC_BASE,
             ratio:    10_000
         });
@@ -352,11 +352,11 @@ contract SafeVaultTest is Test {
 
     function testWithdrawWithEURCAndYoVaultAlloc() public {
         TestERC20 eurc = TestERC20(ClarityUtils.EURC_BASE);
-        MockYoVault yoVault = MockYoVault(ClarityUtils.YO_EUR);
+        MockYoVault yoVault = MockYoVault(ClarityUtils.YO_EUR_BASE);
 
         Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
         allocs[0] = Safe.Allocation({
-            protocol: ClarityUtils.YO_EUR,
+            protocol: ClarityUtils.YO_EUR_BASE,
             asset:    ClarityUtils.EURC_BASE,
             ratio:    10_000
         });

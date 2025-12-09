@@ -35,18 +35,6 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
     uint256 public exitFeeBP = 50;   // 0.5%
     address public feeRecipient;
 
-    /// @notice Emitted when a user deposits assets into the vault
-    event Deposit(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
-
-    /// @notice Emitted when a user mints shares in the vault
-    event Mint(address indexed caller, address indexed receiver, uint256 assets, uint256 shares);
-
-    /// @notice Emitted when a user withdraws assets from the vault
-    event Withdraw(address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares);
-
-    /// @notice Emitted when a user redeems shares from the vault
-    event Redeem(address indexed caller, address indexed receiver, address indexed owner, uint256 assets, uint256 shares);
-
     /// @notice Emitted when the vault is paused
     event EmergencyPaused(address indexed caller);
 
@@ -218,7 +206,6 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         returns (uint256 assets)
     {
         assets = super.mint(shares, receiver);
-        emit Mint(msg.sender, receiver, assets, shares);
     }
 
     /// @inheritdoc IERC4626
@@ -240,7 +227,6 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         returns (uint256 assets)
     {
         assets = super.redeem(shares, receiver, owner);
-        emit Redeem(msg.sender, receiver, owner, assets, shares);
     }
 
     /**
@@ -313,7 +299,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
                 IAavePool(alloc.protocol).supply(alloc.asset, allocationAmount, address(this), 0);
             } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
                 IAavePool(alloc.protocol).supply(alloc.asset, allocationAmount, address(this), 0);
-            } else if (alloc.protocol == ClarityUtils.YO_EUR && alloc.asset == ClarityUtils.EURC_BASE) {
+            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
                 IYoVault(alloc.protocol).deposit(allocationAmount, address(this));
             } else {
                 revert InvalidProtocolOrAsset();
@@ -354,7 +340,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
                 IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
             } else if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
                 IAavePool(alloc.protocol).withdraw(alloc.asset, allocationAmount, address(this));
-            } else if (alloc.protocol == ClarityUtils.YO_EUR && alloc.asset == ClarityUtils.EURC_BASE) {
+            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE && alloc.asset == ClarityUtils.EURC_BASE) {
                 IYoVault(alloc.protocol).redeem(allocationAmount, address(this), address(this));
             } else {
                 revert InvalidProtocolOrAsset();
