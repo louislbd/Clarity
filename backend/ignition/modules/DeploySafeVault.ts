@@ -28,14 +28,8 @@ const DeploySafeVaultModule = buildModule("DeploySafeVault", (m) => {
   });
 
   const allocations = [
-    {
-      protocol: mockAavePool,
-      ratio: 6000, // 60%
-    },
-    {
-      protocol: mockYoVault,
-      ratio: 4000, // 40%
-    },
+    { protocol: mockAavePool, kind: 1, ratio: 6000 }, // 60%
+    { protocol: mockYoVault,  kind: 2, ratio: 4000 }, // 40%
   ];
 
   const safeVault = m.contract(
@@ -47,7 +41,7 @@ const DeploySafeVaultModule = buildModule("DeploySafeVault", (m) => {
   m.call(
     mockEURC,
     "mint",
-    [user, 100_000n * 10n ** 6n], // 100k MockEURC (6 décimales)
+    [user, 100_000n * 10n ** 6n],
     { id: "FundUserWithMockEURC" }
   );
 

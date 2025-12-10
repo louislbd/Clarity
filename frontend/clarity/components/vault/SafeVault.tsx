@@ -17,12 +17,12 @@ import VaultStats from "@/components/vault/VaultStats";
 import {
   SAFE_VAULT_ADDRESS,
   SAFE_VAULT_ABI,
-  SAFE_VAULT_DECIMALS,
+  EURC_DECIMALS,
 } from "@/lib/contracts/safeVault";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 // MockUSDC deployed address
-const MOCK_EURC_ADDRESS = "0x08878E4722049586b02E2A8D2646C7E3164c6301";
+const MOCK_EURC_ADDRESS = "0xF9F3DdB6CB7bf5818D3fD1fF79b5a5D152CB6d85";
 
 // ERC20 approve ABI fragment
 const ERC20_ABI = [
@@ -54,7 +54,7 @@ export default function SafeVaultPage() {
     address: SAFE_VAULT_ADDRESS,
     abi: SAFE_VAULT_ABI,
     functionName: "convertToAssets",
-    args: [BigInt(10 ** SAFE_VAULT_DECIMALS)],
+    args: [BigInt(10 ** EURC_DECIMALS)],
   });
 
   const { data: apyRaw } = useReadContract({
@@ -73,14 +73,14 @@ export default function SafeVaultPage() {
     const tvl =
       totalAssets != null
         ? `$${Number(
-            formatUnits(totalAssets as bigint, SAFE_VAULT_DECIMALS),
+            formatUnits(totalAssets as bigint, EURC_DECIMALS),
           ).toLocaleString()}`
         : "…";
 
     const pps =
       pricePerShareRaw != null
         ? `$${Number(
-            formatUnits(pricePerShareRaw as bigint, SAFE_VAULT_DECIMALS),
+            formatUnits(pricePerShareRaw as bigint, EURC_DECIMALS),
           ).toFixed(3)}`
         : "…";
 
@@ -126,7 +126,7 @@ export default function SafeVaultPage() {
       address: MOCK_EURC_ADDRESS,
       abi: ERC20_ABI,
       functionName: "approve",
-      args: [SAFE_VAULT_ADDRESS, parseUnits(amount, SAFE_VAULT_DECIMALS)],
+      args: [SAFE_VAULT_ADDRESS, parseUnits(amount, EURC_DECIMALS)],
     });
   };
 
@@ -149,7 +149,7 @@ export default function SafeVaultPage() {
       address: SAFE_VAULT_ADDRESS,
       abi: SAFE_VAULT_ABI,
       functionName: "deposit",
-      args: [parseUnits(amount, SAFE_VAULT_DECIMALS), address],
+      args: [parseUnits(amount, EURC_DECIMALS), address],
     });
   };
 
@@ -159,7 +159,7 @@ export default function SafeVaultPage() {
       address: SAFE_VAULT_ADDRESS,
       abi: SAFE_VAULT_ABI,
       functionName: "withdraw",
-      args: [parseUnits(amount, SAFE_VAULT_DECIMALS), address, address],
+      args: [parseUnits(amount, EURC_DECIMALS), address, address],
     });
   };
 

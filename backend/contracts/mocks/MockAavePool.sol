@@ -6,13 +6,15 @@ import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.s
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { MockERC20 } from "./MockERC20.sol";
 
+/**
+ * @notice Minimal mock of Aave EUR vault for testnet.
+ * Deposits EURC, receive aEUR (1:1 ratio, no yield here).
+ */
 contract MockAavePool {
     using SafeERC20 for IERC20;
 
     // underlying => aToken
     mapping(address => address) public aTokens;
-
-    // Simple access control (optional but recommended)
     address public owner;
 
     error NotOwner();

@@ -25,8 +25,9 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     /// @notice Allocation structure - simplified for single underlying asset (EURC)
     struct Allocation {
-        address protocol;  // e.g., AAVE_POOL_BASE or YO_EUR_BASE
-        uint256 ratio;     // Allocation percentage in basis points (out of 10000)
+        address protocol;
+        uint8 kind;    // 1 = AAVE, 2 = YO
+        uint256 ratio;
     }
 
     Allocation[] private allocations;
@@ -49,6 +50,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     /// @notice Emitted when the exit fee is updated
     event ExitFeeUpdated(uint256 indexed newFeeBP);
+
 
     error VaultIsPaused();
     error NoAllocationsDefined();
@@ -344,18 +346,19 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
             Allocation memory alloc = allocations[i];
             uint256 allocationAmount =
                 (netAssets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+
             require(allocationAmount <= netAssets, InvalidAllocationRatio());
 
             IERC20(eurcToken).approve(alloc.protocol, allocationAmount);
 
-            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE) {
+            if (alloc.kind == 1) {
                 IAavePool(alloc.protocol).supply(
                     eurcToken,
                     allocationAmount,
                     address(this),
                     0
                 );
-            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE) {
+            } else if (alloc.kind == 2) {
                 IYoVault(alloc.protocol).deposit(allocationAmount, address(this));
             } else {
                 revert InvalidProtocolOrAsset();
@@ -392,13 +395,13 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
                 (amountToWithdraw * alloc.ratio) / ClarityUtils.BASIS_POINTS;
             require(allocationAmount <= amountToWithdraw, InvalidAllocationRatio());
 
-            if (alloc.protocol == ClarityUtils.AAVE_POOL_BASE) {
+            if (alloc.kind == 1) {
                 IAavePool(alloc.protocol).withdraw(
                     eurcToken,
                     allocationAmount,
                     address(this)
                 );
-            } else if (alloc.protocol == ClarityUtils.YO_EUR_BASE) {
+            } else if (alloc.kind == 2) {
                 IYoVault(alloc.protocol).redeem(
                     allocationAmount,
                     address(this),

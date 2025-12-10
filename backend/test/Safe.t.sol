@@ -130,6 +130,7 @@ contract SafeVaultTest is Test {
         Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
         allocs[0] = Safe.Allocation({
             protocol: aaveAddr,
+            kind: 1,
             ratio: 10_000
         });
 
@@ -300,6 +301,7 @@ contract SafeVaultTest is Test {
         Safe.Allocation[] memory badAllocs = new Safe.Allocation[](1);
         badAllocs[0] = Safe.Allocation({
             protocol: address(aavePool),
+            kind: 1,
             ratio: 5_000
         });
 
@@ -316,10 +318,12 @@ contract SafeVaultTest is Test {
         Safe.Allocation[] memory goodAllocs = new Safe.Allocation[](2);
         goodAllocs[0] = Safe.Allocation({
             protocol: address(aavePool),
+            kind: 1,
             ratio: 6_000
         });
         goodAllocs[1] = Safe.Allocation({
             protocol: address(aavePool),
+            kind: 1,
             ratio: 4_000
         });
 
@@ -339,6 +343,7 @@ contract SafeVaultTest is Test {
         Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
         allocs[0] = Safe.Allocation({
             protocol: ClarityUtils.YO_EUR_BASE,
+            kind: 2,
             ratio:    10_000
         });
 
@@ -379,6 +384,7 @@ contract SafeVaultTest is Test {
         Safe.Allocation[] memory allocs = new Safe.Allocation[](1);
         allocs[0] = Safe.Allocation({
             protocol: ClarityUtils.YO_EUR_BASE,
+            kind: 2,
             ratio:    10_000
         });
 
