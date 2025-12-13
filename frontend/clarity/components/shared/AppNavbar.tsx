@@ -8,7 +8,7 @@ import { ModeToggle } from "../mode-toggle";
 import CustomConnectButton from "../custom/CustomConnectButton";
 
 export default function AppNavbar() {
-  const tvl = "$12.3M";
+  const tvl = "$0M";
 
   return (
     <div className="h-[90px] w-3/4 p-4 mx-auto flex items-center justify-between">

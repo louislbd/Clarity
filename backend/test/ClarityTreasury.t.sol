@@ -86,19 +86,18 @@ contract ClarityTreasuryTest is Test {
         treasury.distributeFees(address(mockToken));
 
         uint256 expectedLP = (depositAmount * 2000) / ClarityUtils.BASIS_POINTS; // 20%
-        uint256 expectedTeam = (depositAmount * (ClarityUtils.BASIS_POINTS - 2000)) / (2 * ClarityUtils.BASIS_POINTS); // 40%
+        uint256 expectedTeam = depositAmount - expectedLP;                       // 80%
 
-        // 20% to emergencyLP (teamWallet), 40% to teamWallet again, 40% left in treasury
         assertEq(
             mockToken.balanceOf(teamWallet),
-            teamBalanceBefore + expectedLP + expectedTeam
+            teamBalanceBefore + expectedTeam
         );
         assertEq(
             mockToken.balanceOf(address(treasury)),
-            depositAmount - expectedLP - expectedTeam
+            expectedLP
         );
-
     }
+
 
     function test_DistributeFees_RevertEmptyBalance() public {
         vm.expectRevert(ClarityTreasury.EmptyBalance.selector);
@@ -204,22 +203,23 @@ contract ClarityTreasuryTest is Test {
         treasury.receiveFees(address(mockToken), 500 ether);
 
         uint256 teamBalanceBefore = mockToken.balanceOf(teamWallet);
+
         vm.prank(owner);
         treasury.distributeFees(address(mockToken));
 
         uint256 expectedLP = (totalDeposit * 2000) / ClarityUtils.BASIS_POINTS; // 20%
-        uint256 expectedTeam = (totalDeposit * (ClarityUtils.BASIS_POINTS - 2000)) / (2 * ClarityUtils.BASIS_POINTS); // 40%
+        uint256 expectedTeam = totalDeposit - expectedLP;                       // 80%
 
-        // 20% + 40% to teamWallet, 40% remains in treasury
         assertEq(
             mockToken.balanceOf(teamWallet),
-            teamBalanceBefore + expectedLP + expectedTeam
+            teamBalanceBefore + expectedTeam
         );
         assertEq(
             mockToken.balanceOf(address(treasury)),
-            totalDeposit - expectedLP - expectedTeam
+            expectedLP
         );
     }
+
 
     function test_EmergencyWithdraw_EntireBalance() public {
         uint256 depositAmount = 100 ether;

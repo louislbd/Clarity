@@ -2,8 +2,7 @@ import type { Abi } from "viem";
 import SafeJson from "./Safe.json";
 
 // address of DeploySafeVault#SafeVault on Base Sepolia
-export const SAFE_VAULT_ADDRESS =
-  "0xe4FB481Efcd40b473E87A3ec8D2C28227f91fe8f";
+export const SAFE_VAULT_ADDRESS = "0x735d86cCD3A9650fbC673F8124319A925899902E";
 
 export const SAFE_VAULT_ABI = SafeJson.abi as Abi;
 

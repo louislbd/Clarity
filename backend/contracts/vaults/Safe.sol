@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
+
 import { IERC4626 } from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 import { ERC4626 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
 import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -14,14 +15,14 @@ import { IYoVault } from "../interfaces/IYoVault.sol";
 import { ClarityUtils } from "../ClarityUtils.sol";
 
 /**
- * @title Safe Vault (Clarity)
+ * @title Safe Vault (Clarity) - FIXED with proper allocation unwinding
  * @author louislbd
  * @notice An ERC-4626 compliant vault implementing a safe yield strategy for Clarity.
  * @dev This vault supports ONLY EURC as the underlying asset and allocates it across multiple protocols.
+ *      Uses a decimals offset of 9 to defend against inflation attacks with virtual shares/assets.
  */
 contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
     using SafeERC20 for IERC20;
-
 
     /// @notice Allocation structure - simplified for single underlying asset (EURC)
     struct Allocation {
@@ -35,6 +36,9 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
     uint256 public entryFeeBP = 100;  // 1.0%
     uint256 public exitFeeBP = 50;    // 0.5%
     address public feeRecipient;
+
+    /// @notice Total assets managed across vault and protocols
+    uint256 private totalAssetsManaged;
 
     /// @notice Emitted when the vault is paused
     event EmergencyPaused(address indexed caller);
@@ -50,7 +54,6 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     /// @notice Emitted when the exit fee is updated
     event ExitFeeUpdated(uint256 indexed newFeeBP);
-
 
     error VaultIsPaused();
     error NoAllocationsDefined();
@@ -83,6 +86,67 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
         }
         require(totalRatio == 10000, InvalidAllocationRatio());
         feeRecipient = _feeRecipient;
+        totalAssetsManaged = 0;
+    }
+
+    /**
+     * @notice Returns the decimals offset used for inflation attack protection.
+     * @dev This increases vault decimals by 9, creating virtual shares/assets that make attacks unprofitable.
+     *      EURC has 6 decimals → cSAFE has 15 decimals (6 + 9).
+     * @return uint8 The decimals offset (9).
+     */
+    function _decimalsOffset() internal view virtual override returns (uint8) {
+        return 9;
+    }
+
+    /**
+     * @notice Get total assets under management (in vault + in protocols).
+     * @dev Overrides ERC4626 to include assets deployed in lending protocols.
+     * @return Total assets across vault and all protocol allocations.
+     */
+    function totalAssets() public view override(ERC4626, IERC4626) returns (uint256) {
+        // Assets in vault contract itself
+        uint256 vaultBalance = IERC20(asset()).balanceOf(address(this));
+
+
+        // Add tracked assets in protocols
+        // This is updated whenever assets are deposited/withdrawn
+        return totalAssetsManaged + vaultBalance;
+    }
+
+    /**
+     * @notice Convert shares to assets, properly handling the decimals offset.
+     * @dev Override ERC4626 to use simple ratio math instead of broken offset logic.
+     * @param shares The amount of shares to convert.
+     * @return assets The amount of assets.
+     */
+    function convertToAssets(uint256 shares)
+        public
+        view
+        virtual
+        override(ERC4626, IERC4626)
+        returns (uint256)
+    {
+        uint256 supply = totalSupply();
+        return supply == 0 ? shares : (shares * totalAssets()) / supply;
+    }
+
+    /**
+     * @notice Convert assets to shares, properly handling the decimals offset.
+     * @dev Override ERC4626 to use simple ratio math instead of broken offset logic.
+     * @param assets The amount of assets to convert.
+     * @return shares The amount of shares.
+     */
+    function convertToShares(uint256 assets)
+        public
+        view
+        virtual
+        override(ERC4626, IERC4626)
+        returns (uint256)
+    {
+        uint256 supply = totalSupply();
+        // On first deposit, 1 asset = 1 * 10^offset shares (inflation attack protection)
+        return supply == 0 ? assets * 10 ** _decimalsOffset() : (assets * supply) / totalAssets();
     }
 
     /**
@@ -248,8 +312,13 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
             }
         }
 
-        // Process withdrawal: protocol unwinding, fee handling, share burning
-        _processWithdraw(receiver, owner, assets, shares);
+        // assets = net (user receives this after fees)
+        // Compute gross amount to withdraw from protocols
+        uint256 feeBP = exitFeeBP;
+        uint256 grossAssets = (assets * ClarityUtils.BASIS_POINTS) / (ClarityUtils.BASIS_POINTS - feeBP);
+
+        // Process withdrawal with gross assets
+        _processWithdraw(receiver, owner, grossAssets, shares);
 
         return shares;
     }
@@ -274,8 +343,11 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
             }
         }
 
-        // Process withdrawal: protocol unwinding, fee handling, share burning
-        _processWithdraw(receiver, owner, assets, shares);
+        // Compute gross assets from shares
+        uint256 grossAssets = convertToAssets(shares);
+
+        // Process withdrawal with gross assets
+        _processWithdraw(receiver, owner, grossAssets, shares);
 
         return assets;
     }
@@ -287,7 +359,9 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
      */
     function previewDeposit(uint256 _assets) public view override(ERC4626, IERC4626) returns (uint256) {
         uint256 fee = ClarityUtils._feeOnTotal(_assets, entryFeeBP);
-        return super.previewDeposit(_assets - fee);
+        uint256 netAssets = _assets - fee;
+        // Use custom convertToShares, not super.previewDeposit
+        return convertToShares(netAssets);
     }
 
     /**
@@ -296,28 +370,64 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
      * @return uint256 The amount of assets required for the mint.
      */
     function previewMint(uint256 _shares) public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 assets = super.previewMint(_shares);
+        // Get assets needed for the shares
+        uint256 assets = convertToAssets(_shares);
+        // Add entry fee on top
         return assets + ClarityUtils._feeOnRaw(assets, entryFeeBP);
     }
 
     /**
      * @notice Preview the amount of shares burned for a given asset withdrawal, accounting for exit fees.
-     * @param _assets The amount of assets to withdraw.
+     * @param _assets The amount of assets to withdraw (net).
      * @return uint256 The amount of shares that would be burned.
      */
     function previewWithdraw(uint256 _assets) public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 fee = ClarityUtils._feeOnRaw(_assets, exitFeeBP);
-        return super.previewWithdraw(_assets + fee);
+        // User wants net _assets
+        // Gross assets = net / (1 - exitFeeBP)
+        uint256 feeBP = exitFeeBP;
+        uint256 grossAssets = (_assets * ClarityUtils.BASIS_POINTS) / (ClarityUtils.BASIS_POINTS - feeBP);
+        // Convert gross assets to shares needed
+        return convertToShares(grossAssets);
     }
 
     /**
-     * @notice Preview the amount of assets received for a given share redemption, accounting for exit fees.
+     * @notice Preview assets received when redeeming shares, net of exit fees.
      * @param _shares The amount of shares to redeem.
-     * @return uint256 The amount of assets that would be received.
+     * @return uint256 The amount of assets received (after fees).
      */
     function previewRedeem(uint256 _shares) public view override(ERC4626, IERC4626) returns (uint256) {
-        uint256 assets = super.previewRedeem(_shares);
-        return assets - ClarityUtils._feeOnTotal(assets, exitFeeBP);
+        // Get gross assets from shares
+        uint256 grossAssets = convertToAssets(_shares);
+        // Deduct exit fee
+        uint256 feeAmount = ClarityUtils._feeOnTotal(grossAssets, exitFeeBP);
+        return grossAssets - feeAmount;
+    }
+
+    /**
+     * @notice Maximum amount of assets that can be withdrawn by owner, accounting for exit fees.
+     * @param owner The address owning the shares.
+     * @return uint256 The maximum amount of assets (net of fees) that can be withdrawn.
+     */
+    function maxWithdraw(address owner) public view override(ERC4626, IERC4626) returns (uint256) {
+        uint256 shares = balanceOf(owner);
+        if (shares == 0) return 0;
+
+        // Convert shares to gross assets using correct conversion
+        uint256 grossAssets = convertToAssets(shares);
+
+        // Deduct exit fee to get net assets user receives
+        uint256 netAssets = grossAssets - ClarityUtils._feeOnTotal(grossAssets, exitFeeBP);
+
+        return netAssets;
+    }
+
+    /**
+     * @notice Maximum amount of shares that can be redeemed by owner.
+     * @param owner The address owning the shares.
+     * @return uint256 The maximum amount of shares that can be redeemed.
+     */
+    function maxRedeem(address owner) public view override(ERC4626, IERC4626) returns (uint256) {
+        return balanceOf(owner);
     }
 
     // ---------- INTERNAL PROCESSING LOGIC ----------
@@ -344,8 +454,7 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
         for (uint256 i = 0; i < allocations.length; ++i) {
             Allocation memory alloc = allocations[i];
-            uint256 allocationAmount =
-                (netAssets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            uint256 allocationAmount = (netAssets * alloc.ratio) / ClarityUtils.BASIS_POINTS;
 
             require(allocationAmount <= netAssets, InvalidAllocationRatio());
 
@@ -363,37 +472,40 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
             } else {
                 revert InvalidProtocolOrAsset();
             }
-
             IERC20(eurcToken).approve(alloc.protocol, 0);
         }
-
+        // Update total assets managed
+        totalAssetsManaged += netAssets;
         _mint(receiver, shares);
         emit Deposit(msg.sender, receiver, assets, shares);
     }
 
     /**
      * @notice Process a withdrawal: unwind from protocols, deduct exit fees, burn shares.
-     * @param receiver The address receiving the withdrawn assets.
+     * @param receiver The address receiving the withdrawn assets (net, after fees).
      * @param owner The address owning the shares being redeemed.
-     * @param assets The amount of assets to withdraw.
+     * @param grossAssets The total amount of assets to unwind from protocols (gross, includes fees).
      * @param shares The amount of shares to burn.
      */
     function _processWithdraw(
         address receiver,
         address owner,
-        uint256 assets,
+        uint256 grossAssets,
         uint256 shares
     ) internal {
         address eurcToken = asset();
-
-        uint256 fee = ClarityUtils._feeOnRaw(assets, exitFeeBP);
-        uint256 amountToWithdraw = assets - fee;
+        // Cap grossAssets to not exceed what's actually deployed
+        // This handles rounding edge cases where grossAssets > totalAssetsManaged
+        uint256 amountToUnwind = grossAssets > totalAssetsManaged ? totalAssetsManaged : grossAssets;
+        // Compute fee and net from the actual amount being unwound
+        uint256 fee = ClarityUtils._feeOnTotal(amountToUnwind, exitFeeBP);
+        uint256 netAssets = amountToUnwind - fee;
 
         for (uint256 i = 0; i < allocations.length; ++i) {
             Allocation memory alloc = allocations[i];
             uint256 allocationAmount =
-                (amountToWithdraw * alloc.ratio) / ClarityUtils.BASIS_POINTS;
-            require(allocationAmount <= amountToWithdraw, InvalidAllocationRatio());
+                (amountToUnwind * alloc.ratio) / ClarityUtils.BASIS_POINTS;
+            require(allocationAmount <= amountToUnwind, InvalidAllocationRatio());
 
             if (alloc.kind == 1) {
                 IAavePool(alloc.protocol).withdraw(
@@ -412,15 +524,17 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
             }
         }
 
+        // Update total assets managed by actual unwound amount
+        totalAssetsManaged -= amountToUnwind;
+
         if (fee > 0 && feeRecipient != address(0)) {
             IERC20(eurcToken).safeTransfer(feeRecipient, fee);
         }
-
-        if (amountToWithdraw > 0) {
-            IERC20(eurcToken).safeTransfer(receiver, amountToWithdraw);
+        if (netAssets > 0) {
+            IERC20(eurcToken).safeTransfer(receiver, netAssets);
         }
 
         _burn(owner, shares);
-        emit Withdraw(msg.sender, receiver, owner, assets, shares);
+        emit Withdraw(msg.sender, receiver, owner, amountToUnwind, shares);
     }
 }

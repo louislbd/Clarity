@@ -4,10 +4,11 @@ const DeploySafeVaultModule = buildModule("DeploySafeVault", (m) => {
   const deployer = m.getAccount(0);
 
   const user = "0xFD68dA8209C15ae3f6ed5e2e5728Ee40A4493e60";
+  const clarityTreasury = "0xccf251B731699997eC745a51F38a19be89384353";
 
   const mockEURC = m.contract(
     "MockERC20",
-    ["Mock EURC", "EURC", 6, deployer, 1_000_000],
+    ["Mock EURC", "EURC", 6, deployer, 1_000],
     { id: "MockEURC" }
   );
 
@@ -34,15 +35,8 @@ const DeploySafeVaultModule = buildModule("DeploySafeVault", (m) => {
 
   const safeVault = m.contract(
     "Safe",
-    [mockEURC, deployer, allocations, deployer],
+    [mockEURC, deployer, allocations, clarityTreasury],
     { id: "SafeVault" }
-  );
-
-  m.call(
-    mockEURC,
-    "mint",
-    [user, 100_000n * 10n ** 6n],
-    { id: "FundUserWithMockEURC" }
   );
 
   return {
