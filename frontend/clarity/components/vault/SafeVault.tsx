@@ -20,7 +20,7 @@ import {
 } from "@/lib/contracts/safeVault";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-const MOCK_EURC_ADDRESS = "0x4e30A61fcbe7ca46F6dc98C3256f494a67eBe1AD";
+const MOCK_EURC_ADDRESS = "0x73B7F546FC589f1CD227D6641225AEE294158cD5";
 
 const ERC20_ABI = [
   {
@@ -291,8 +291,8 @@ export default function SafeVaultPage() {
       risk: "Low",
       description:
         "Conservative yield strategy focused on stablecoin lending with minimal risk exposure",
-      totalAssetsRaw: totalAssets,
-      totalSupplyRaw: totalSupply,
+      totalAssetsRaw: totalAssets as bigint | undefined,
+      totalSupplyRaw: totalSupply as bigint | undefined,
     };
   }, [totalAssets, totalSupply, pricePerShareRaw, apyRaw]);
 
@@ -568,7 +568,7 @@ const parsedAmount =
 
               {/* Fee Display */}
               <div className="text-xs text-muted-foreground">
-                {mode === "deposit" ? "Fees: 1%" : "Fees: 0.5%"}
+                {mode === "deposit" ? "Fees: 0.1%" : "Fees: 0.1%"}
               </div>
 
               {/* CTA Button */}

@@ -33,8 +33,8 @@ contract Safe is ERC4626, Pausable, Ownable, IClarityVault {
 
     Allocation[] private allocations;
     uint256 private currentAPY;
-    uint256 public entryFeeBP = 100;  // 1.0%
-    uint256 public exitFeeBP = 50;    // 0.5%
+    uint256 public entryFeeBP = 10; // 0.1% entry fee
+    uint256 public exitFeeBP = 10;  // 0.1% exit fee
     address public feeRecipient;
 
     /// @notice Total assets managed across vault and protocols

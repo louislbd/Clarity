@@ -160,8 +160,8 @@ contract SafeVaultTest is Test {
 
     function testInitialState() public view {
         assertEq(vault.asset(), address(usdc), "asset mismatch");
-        assertEq(vault.entryFeeBP(), 100, "entry fee");
-        assertEq(vault.exitFeeBP(), 50, "exit fee");
+        assertEq(vault.entryFeeBP(), 10, "entry fee");
+        assertEq(vault.exitFeeBP(), 10, "exit fee");
 
         (address[] memory protocols, uint256[] memory ratios) = vault.getAllocations();
         assertEq(protocols.length, 1);

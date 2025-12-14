@@ -47,13 +47,13 @@ export function useSafeVaultEvents() {
     eventName: 'Deposit',
     chainId: baseSepolia.id, // Base Sepolia chain ID
     onLogs: (logs) => {
-      logs.forEach((log) => {
-        const event = log[0]; // wagmi v2 wraps in array
+      logs.forEach((log: any) => {
+        const event = log;
         const args = event.args as any;
         if (!args) return;
 
         const { sender, receiver, assets, shares } = args;
-        
+
         const newActivity: VaultActivityEvent = {
           type: 'deposit' as const,
           amount: formatUnits(assets as bigint, 6), // EURC has 6 decimals
@@ -81,8 +81,8 @@ export function useSafeVaultEvents() {
     eventName: 'Withdraw',
     chainId: baseSepolia.id, // Base Sepolia chain ID
     onLogs: (logs) => {
-      logs.forEach((log) => {
-        const event = log[0]; // wagmi v2 wraps in array
+      logs.forEach((log: any) => {
+        const event = log;
         const args = event.args as any;
         if (!args) return;
 
