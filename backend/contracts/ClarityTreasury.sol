@@ -66,14 +66,14 @@ contract ClarityTreasury is Ownable {
     function distributeFees(address asset) external {
         uint256 totalBalance = IERC20(asset).balanceOf(address(this));
         require(totalBalance > 0, EmptyBalance());
-        uint256 toEmergencyLPBP = (totalBalance * emergencyLPBP) / ClarityUtils.BASIS_POINTS;
-        // 40% example
-        // TODO: Define real revenues allocation
-        uint256 toTeam = (totalBalance * (ClarityUtils.BASIS_POINTS - emergencyLPBP)) / (2 * ClarityUtils.BASIS_POINTS);
 
-        if (toEmergencyLPBP > 0) IERC20(asset).safeTransfer(teamWallet, toEmergencyLPBP);
+        // 20% → emergency LP
+        uint256 toEmergencyLPBP = (totalBalance * emergencyLPBP) / ClarityUtils.BASIS_POINTS;
+
+        // 80% → team
+        uint256 toTeam = totalBalance - toEmergencyLPBP;
+
         if (toTeam > 0) IERC20(asset).safeTransfer(teamWallet, toTeam);
-        // TODO: Buyback and burn Clarity tokens with team funds?
 
         emit FeesDistributed(asset, toEmergencyLPBP, toTeam);
     }

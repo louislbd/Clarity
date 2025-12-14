@@ -29,7 +29,7 @@ export default function CustomConnectButton() {
                 Loading...
               </Button>
             ) : !account || !chain ? (
-              <Button variant="primary" size="sm" onClick={openConnectModal}>
+              <Button variant="default" size="sm" onClick={openConnectModal}>
                 Connect Wallet
               </Button>
             ) : chain.unsupported ? (

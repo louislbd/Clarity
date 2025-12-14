@@ -1,24 +1,22 @@
 services:
-  backend:
-    build: ./backend
-    container_name: clarity_back
-    command: gunicorn Clarity.wsgi:application --bind 0.0.0.0:8000
-    volumes:
-      - ./backend:/app
-    env_file:
-      - .env
+  clarity-protocol:
+    build:
+      context: ./frontend/clarity
+      dockerfile: Dockerfile
+    container_name: clarity-protocol
     ports:
-      - "8000:8000"
-    depends_on:
-      - db
-
-  db:
-    image: postgres:17
-    container_name: clarity_db
-    env_file:
-      - .env
+      - "80:80"
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=https://claritydefi.com
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - /var/log/clarity:/var/log/nginx
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
 
-volumes:
-  postgres_data:

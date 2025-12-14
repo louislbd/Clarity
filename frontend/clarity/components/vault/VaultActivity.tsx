@@ -1,57 +1,56 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowDownIcon, ArrowUpIcon, ExternalLink } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ExternalLink, Loader2 } from "lucide-react";
+import { useSafeVaultEvents } from "@/lib/hooks/useSafeVaultEvents";
 
 export default function VaultActivity() {
-  const activities = [
-    {
-      type: "deposit",
-      amount: "1,250.00 USDC",
-      address: "0x1234...5678",
-      timestamp: "2 hours ago",
-      txHash: "0xabc...def",
-    },
-    {
-      type: "withdraw",
-      amount: "850.50 USDC",
-      address: "0x8765...4321",
-      timestamp: "4 hours ago",
-      txHash: "0xdef...abc",
-    },
-    {
-      type: "deposit",
-      amount: "5,000.00 USDC",
-      address: "0x9876...1234",
-      timestamp: "6 hours ago",
-      txHash: "0x123...456",
-    },
-    {
-      type: "withdraw",
-      amount: "2,340.75 USDC",
-      address: "0x4567...8901",
-      timestamp: "8 hours ago",
-      txHash: "0x789...012",
-    },
-    {
-      type: "deposit",
-      amount: "750.25 USDC",
-      address: "0x2345...6789",
-      timestamp: "12 hours ago",
-      txHash: "0x345...678",
-    },
-  ];
+  const { activities, isLoading } = useSafeVaultEvents();
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Vault Activity</CardTitle>
+          <CardDescription>Recent deposits and withdrawals</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (activities.length === 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Vault Activity</CardTitle>
+          <CardDescription>Recent deposits and withdrawals</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-48 flex items-center justify-center">
+            <p className="text-muted-foreground text-center">
+              No activity yet. Be the first to deposit into Safe Vault!
+            </p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>
       <CardHeader>
         <CardTitle>Vault Activity</CardTitle>
-        <CardDescription>Recent deposits and withdrawals</CardDescription>
+        <CardDescription>Recent deposits and withdrawals (last 50 transactions)</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           {activities.map((activity, index) => (
             <div
-              key={index}
+              key={`${activity.txHash}-${index}`}
               className="flex items-center justify-between p-4 rounded-lg border hover:bg-muted/50 transition-colors"
             >
               <div className="flex items-center gap-4">
@@ -70,10 +69,17 @@ export default function VaultActivity() {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <Badge variant={activity.type === "deposit" ? "default" : "destructive"}>
+                    <Badge
+                      variant={activity.type === "deposit" ? "default" : "destructive"}
+                    >
                       {activity.type.toUpperCase()}
                     </Badge>
-                    <span className="font-medium">{activity.amount}</span>
+                    <span className="font-medium">
+                      {Number(activity.amount).toLocaleString("en-US", {
+                        maximumFractionDigits: 2,
+                      })}{" "}
+                      EURC
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                     <span>{activity.address}</span>
@@ -83,7 +89,7 @@ export default function VaultActivity() {
                 </div>
               </div>
               <a
-                href={`https://basescan.org/tx/${activity.txHash}`}
+                href={`https://sepolia.basescan.org/tx/${activity.txHash}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted-foreground hover:text-foreground transition-colors"
