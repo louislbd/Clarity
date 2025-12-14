@@ -1,0 +1,27 @@
+# Node / npm
+/node_modules
+/package-lock.json  # optional: keep if you want locked deps in repo
+
+# Foundry / Forge
+/lib
+/cache
+/out
+/broadcast
+/coverage
+
+# Hardhat
+ignition/deployments/
+/artifacts
+
+# Typechain
+/types
+
+# Build output (frontend or scripts)
+/dist
+/bundle
+
+# Environment & tools
+.env
+.env.*
+.npm
+.eslintcache
