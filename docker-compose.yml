@@ -6,12 +6,13 @@ services:
     container_name: clarity-protocol
     ports:
       - "80:80"
+      - "443:443"
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=https://claritydefi.com
     volumes:
-      - /var/log/clarity:/var/log/nginx
+      - /etc/letsencrypt:/etc/letsencrypt
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
