@@ -38,4 +38,4 @@ COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 80 3000
 
-CMD ["sh", "-c", "node node_modules/.bin/next start &  nginx -g 'daemon off;'"]
+CMD ["sh", "-c", "node_modules/.bin/next start & nginx -g 'daemon off;'"]
