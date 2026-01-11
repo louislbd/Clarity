@@ -29,8 +29,11 @@ services:
     tmpfs:
       - /tmp
       - /var/tmp
+      - /var/run
+      - /var/cache/nginx
+      - /var/lib/nginx
 
-    # SECURITY: Limit ressources
+    # SECURITY: Limit resources
     deploy:
       resources:
         limits:
@@ -47,9 +50,6 @@ services:
       retries: 3
       start_period: 5s
 
-    # SECURITY: No root
-    user: "33:33"  # www-data user (for Nginx)
-
     # SECURITY: Isolate the network
     networks:
       - clarity-net
@@ -63,6 +63,3 @@ services:
 networks:
   clarity-net:
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.name: clarity-br0
-      com.docker.driver.mtu: 1450

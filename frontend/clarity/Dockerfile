@@ -10,11 +10,11 @@ RUN pnpm run build
 FROM nginx:alpine
 
 RUN mkdir -p /var/lib/nginx/logs && \
-    chown -R 33:33 /var/lib/nginx/logs && \
-    chown -R 33:33 /var/cache/nginx && \
-    chown -R 33:33 /var/log/nginx && \
+    chown -R 101:101 /var/lib/nginx/logs && \
+    chown -R 101:101 /var/cache/nginx && \
+    chown -R 101:101 /var/log/nginx && \
     touch /var/run/nginx.pid && \
-    chown 33:33 /var/run/nginx.pid
+    chown 101:101 /var/run/nginx.pid
 
 WORKDIR /usr/share/nginx/html
 
@@ -25,11 +25,9 @@ COPY --from=builder /app/node_modules ./node_modules
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-RUN chown -R 33:33 /usr/share/nginx/html && \
-    chown -R 33:33 /etc/nginx/conf.d
+RUN chown -R 101:101 /usr/share/nginx/html && \
+    chown -R 101:101 /etc/nginx/conf.d
 
 EXPOSE 80 443
-
-USER 33:33
 
 CMD ["nginx", "-g", "daemon off;"]
