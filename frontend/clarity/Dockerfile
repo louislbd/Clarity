@@ -1,23 +1,33 @@
 # Stage 1: Dependencies
 FROM node:20-alpine AS deps
+
 RUN corepack enable
+
 WORKDIR /app
+
 COPY package.json pnpm-lock.yaml ./
+
 RUN pnpm install --frozen-lockfile
 
-# Stage 2: Builder
+# Stage 2: Build
 FROM node:20-alpine AS builder
+
 RUN corepack enable
 WORKDIR /app
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json pnpm-lock.yaml ./
 COPY . .
+
 RUN pnpm run build
 
 # Stage 3: Runtime
-FROM node:20-alpine
+FROM node:20-alpine AS runtime
+
 RUN apk add --no-cache nginx
+
 WORKDIR /app
+
 ENV NODE_ENV=production
 ENV PORT=3000
 
@@ -25,14 +35,8 @@ COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
-COPY nginx.conf /etc/nginx/nginx.conf
 
-RUN mkdir -p /tmp/nginx/client_body /tmp/nginx/proxy /tmp/nginx/fastcgi /var/log/nginx && \
-    chmod 777 /tmp/nginx /tmp/nginx/client_body /tmp/nginx/proxy /tmp/nginx/fastcgi && \
-    touch /var/log/nginx/error.log /var/log/nginx/access.log && \
-    chmod 666 /var/log/nginx/error.log /var/log/nginx/access.log && \
-    mkdir -p /var/run/nginx && \
-    chmod 777 /var/run/nginx
+COPY nginx.conf /etc/nginx/nginx.conf
 
 EXPOSE 80 3000
 
