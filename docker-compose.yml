@@ -24,15 +24,6 @@ services:
     security_opt:
       - no-new-privileges:true
 
-    # SECURITY: Read-only filesystem
-    read_only: true
-    tmpfs:
-      - /tmp
-      - /var/tmp
-      - /var/run
-      - /var/cache/nginx
-      - /var/lib/nginx
-
     # SECURITY: Limit resources
     deploy:
       resources:
@@ -50,7 +41,6 @@ services:
       retries: 3
       start_period: 5s
 
-    # SECURITY: Isolate the network
     networks:
       - clarity-net
 
