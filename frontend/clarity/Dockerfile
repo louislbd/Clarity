@@ -36,10 +36,12 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY nginx.conf /etc/nginx/nginx.conf
 
 RUN mkdir -p /var/cache/nginx/client_temp && \
-    chmod -R 777 /var/cache/nginx
+    mkdir -p /var/log/nginx && \
+    chmod -R 777 /var/cache/nginx && \
+    chmod -R 777 /var/log/nginx
 
 EXPOSE 80 3000
 
