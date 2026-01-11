@@ -36,7 +36,7 @@ COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./
 
-COPY nginx.conf /etc/nginx/nginx.conf
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 RUN mkdir -p /var/cache/nginx/client_temp && \
     chmod -R 777 /var/cache/nginx
