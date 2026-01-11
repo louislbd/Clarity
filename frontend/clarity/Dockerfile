@@ -31,6 +31,10 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
 
+RUN mkdir -p /var/log/nginx /var/lib/nginx/logs /tmp/nginx/client_body && \
+    chown -R nginx:nginx /var/log/nginx /var/lib/nginx /tmp/nginx && \
+    chmod -R 755 /var/log/nginx /var/lib/nginx /tmp/nginx
+
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/node_modules ./node_modules
