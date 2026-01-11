@@ -9,7 +9,6 @@ COPY package.json pnpm-lock.yaml ./
 
 RUN pnpm install --frozen-lockfile
 
-# Stage 2: Build
 FROM node:20-alpine AS builder
 
 RUN corepack enable
@@ -21,7 +20,6 @@ COPY . .
 
 RUN pnpm run build
 
-# Stage 3: Runtime
 FROM node:20-alpine AS runtime
 
 RUN apk add --no-cache nginx
@@ -30,10 +28,6 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
-
-RUN mkdir -p /var/lib/nginx/tmp/client_body /var/lib/nginx/cache && \
-    chown -R nginx:nginx /var/lib/nginx && \
-    chmod -R 755 /var/lib/nginx
 
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/public ./public

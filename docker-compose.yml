@@ -14,26 +14,9 @@ services:
     volumes:
       - /etc/letsencrypt:/etc/letsencrypt
     restart: unless-stopped
-    cap_drop:
-      - ALL
-    cap_add:
-      - NET_BIND_SERVICE
-    security_opt:
-      - no-new-privileges:true
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 5s
-    networks:
-      - clarity-net
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-networks:
-  clarity-net:
-    driver: bridge
