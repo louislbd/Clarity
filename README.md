@@ -6,7 +6,6 @@
 # Clarity
 
 **Web3 platform for decentralized treasury management and crypto investment vaults.**
-_Built using Django (REST API), PostgreSQL (DB), Docker Compose (dev/prod stack), and designed for a decoupled frontend._
 
 ---
 
@@ -14,18 +13,15 @@ _Built using Django (REST API), PostgreSQL (DB), Docker Compose (dev/prod stack)
 
 Clarity is a platform specialized in creating and managing crypto investment vaults, tailored for DAOs and active investors in the DeFi space.
 Main features include:
-- Modern backend using Django + Django REST Framework
-- Centralized API for vaults, profiles, operations, etc.
 - Easy integration with smart contracts (_contracts/_)
 - Docker-ready stack for fast development and deployment
-- Clear split for integrating React, Next.js, or any modern frontend
+- Next.js modern frontend stack
+- EVM Wallet integrations
 
 ---
 
 ## 🛠️ Technologies
 
-- **Backend:** Django, Django REST Framework, Gunicorn
-- **Database:** PostgreSQL
 - **Frontend:** (to be completed—React, Next.js, etc.)
 - **Smart Contracts:** Solidity, Hardhat/Foundry (to be completed)
 - **Containerization:** Docker, Docker Compose
@@ -70,15 +66,11 @@ docker-compose up --build
 ```
 
 Backend available at **http://localhost:8000**
-Frontend: to be completed based on chosen stack
 
 ---
 
 ## 🌐 API Endpoints (examples)
 
-- `/api/vaults/` – Access vaults
-- `/api/investors/` – Manage investors
-- `/api/transactions/` – Transaction history and actions
 - _Interactive documentation coming soon_
 
 ---
